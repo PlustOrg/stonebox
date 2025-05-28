@@ -1,13 +1,8 @@
-import {
-  StoneboxOptions,
-  StoneboxExecuteOptions,
-  StoneboxExecutionResult,
-} from './interfaces';
+import { StoneboxOptions, StoneboxExecuteOptions, StoneboxExecutionResult } from './interfaces';
 import {
   StoneboxConfigurationError,
   StoneboxCompilationError,
   StoneboxTimeoutError,
-  StoneboxMemoryLimitError,
   StoneboxRuntimeError,
 } from './errors';
 import * as fs from 'fs/promises';
@@ -29,15 +24,19 @@ export class Stonebox {
     this.language = language.toLowerCase();
     this.options = options;
     if (!['javascript', 'typescript', 'python'].includes(this.language)) {
-      throw new StoneboxConfigurationError(
-        `Unsupported language: ${language}`
-      );
+      throw new StoneboxConfigurationError(`Unsupported language: ${language}`);
     }
     // Validate options.timeoutMs and memoryLimitMb if provided
-    if (options.timeoutMs !== undefined && (typeof options.timeoutMs !== 'number' || options.timeoutMs <= 0)) {
+    if (
+      options.timeoutMs !== undefined &&
+      (typeof options.timeoutMs !== 'number' || options.timeoutMs <= 0)
+    ) {
       throw new StoneboxConfigurationError('timeoutMs must be a positive number');
     }
-    if (options.memoryLimitMb !== undefined && (typeof options.memoryLimitMb !== 'number' || options.memoryLimitMb <= 0)) {
+    if (
+      options.memoryLimitMb !== undefined &&
+      (typeof options.memoryLimitMb !== 'number' || options.memoryLimitMb <= 0)
+    ) {
       throw new StoneboxConfigurationError('memoryLimitMb must be a positive number');
     }
   }
@@ -45,7 +44,9 @@ export class Stonebox {
   public addFile(filePath: string, content: string): void {
     const normalizedPath = path.normalize(filePath);
     if (normalizedPath.includes('..') || path.isAbsolute(normalizedPath)) {
-      throw new StoneboxConfigurationError("Invalid file path: must be relative and within the sandbox.");
+      throw new StoneboxConfigurationError(
+        'Invalid file path: must be relative and within the sandbox.',
+      );
     }
     this.files.set(normalizedPath, content);
   }
@@ -61,7 +62,7 @@ export class Stonebox {
   }
 
   public async execute(
-    executeOptionsInput?: StoneboxExecuteOptions
+    executeOptionsInput?: StoneboxExecuteOptions,
   ): Promise<StoneboxExecutionResult> {
     // Merge options
     const mergedOptions: StoneboxExecuteOptions & StoneboxOptions = {
@@ -69,10 +70,16 @@ export class Stonebox {
       ...executeOptionsInput,
     };
     // Validate mergedOptions.timeoutMs and memoryLimitMb
-    if (mergedOptions.timeoutMs !== undefined && (typeof mergedOptions.timeoutMs !== 'number' || mergedOptions.timeoutMs <= 0)) {
+    if (
+      mergedOptions.timeoutMs !== undefined &&
+      (typeof mergedOptions.timeoutMs !== 'number' || mergedOptions.timeoutMs <= 0)
+    ) {
       throw new StoneboxConfigurationError('timeoutMs must be a positive number');
     }
-    if (mergedOptions.memoryLimitMb !== undefined && (typeof mergedOptions.memoryLimitMb !== 'number' || mergedOptions.memoryLimitMb <= 0)) {
+    if (
+      mergedOptions.memoryLimitMb !== undefined &&
+      (typeof mergedOptions.memoryLimitMb !== 'number' || mergedOptions.memoryLimitMb <= 0)
+    ) {
       throw new StoneboxConfigurationError('memoryLimitMb must be a positive number');
     }
     const timeoutMs = mergedOptions.timeoutMs ?? 5000;
@@ -89,9 +96,7 @@ export class Stonebox {
       }
     }
     if (!entrypoint) {
-      throw new StoneboxConfigurationError(
-        'No entrypoint specified and no files added.'
-      );
+      throw new StoneboxConfigurationError('No entrypoint specified and no files added.');
     }
     if (!this.files.has(entrypoint)) {
       // Improve error message: list available files if small, else suggest checking
@@ -192,7 +197,12 @@ export class Stonebox {
   }
 
   private async spawnAndCollect(
-    preparedCmd: { command: string; args: string[]; env: Record<string, string | undefined>; cwd: string },
+    preparedCmd: {
+      command: string;
+      args: string[];
+      env: Record<string, string | undefined>;
+      cwd: string;
+    },
     options: StoneboxExecuteOptions & StoneboxOptions,
     timeoutMs: number,
   ): Promise<StoneboxExecutionResult> {
@@ -208,7 +218,10 @@ export class Stonebox {
         signal: abortController.signal,
       };
       const mergedOptions = options;
-      if ((os.platform() === 'linux' || os.platform() === 'darwin') && mergedOptions.languageOptions?.executionOverrides) {
+      if (
+        (os.platform() === 'linux' || os.platform() === 'darwin') &&
+        mergedOptions.languageOptions?.executionOverrides
+      ) {
         const overrides = mergedOptions.languageOptions.executionOverrides;
         if (typeof overrides.uid === 'number') spawnOpts.uid = overrides.uid;
         if (typeof overrides.gid === 'number') spawnOpts.gid = overrides.gid;
@@ -241,16 +254,20 @@ export class Stonebox {
         finished = true;
         clearTimeout(timeoutHandle);
         if (err.name === 'AbortError' || abortController.signal.aborted) {
-          reject(new StoneboxTimeoutError('Process timed out.', {
-            configuredTimeoutMs: timeoutMs,
-            actualDurationMs: Date.now() - start,
-          }));
+          reject(
+            new StoneboxTimeoutError('Process timed out.', {
+              configuredTimeoutMs: timeoutMs,
+              actualDurationMs: Date.now() - start,
+            }),
+          );
         } else {
-          reject(new StoneboxRuntimeError(err.message, {
-            originalError: err,
-            command: preparedCmd.command,
-            args: preparedCmd.args,
-          }));
+          reject(
+            new StoneboxRuntimeError(err.message, {
+              originalError: err,
+              command: preparedCmd.command,
+              args: preparedCmd.args,
+            }),
+          );
         }
       });
       child.on('exit', (code, signal) => {
@@ -259,10 +276,12 @@ export class Stonebox {
         clearTimeout(timeoutHandle);
         const durationMs = Date.now() - start;
         if (killedByTimeout || abortController.signal.aborted) {
-          reject(new StoneboxTimeoutError('Process timed out.', {
-            configuredTimeoutMs: timeoutMs,
-            actualDurationMs: durationMs,
-          }));
+          reject(
+            new StoneboxTimeoutError('Process timed out.', {
+              configuredTimeoutMs: timeoutMs,
+              actualDurationMs: durationMs,
+            }),
+          );
         } else {
           resolve({
             stdout,

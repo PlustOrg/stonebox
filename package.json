@@ -35,6 +35,5 @@
   "dependencies": {
     "rimraf": "^6.0.1",
     "tmp": "^0.2.3"
-  },
-  "type": "module"
+  }
 }

@@ -15,16 +15,20 @@ export class TypeScriptEngine implements LanguageEngine {
       const outDir = 'compiled_ts';
       await fs.writeFile(
         tsconfigPath,
-        JSON.stringify({
-          compilerOptions: {
-            target: 'es2020',
-            module: 'commonjs',
-            outDir,
-            rootDir: '.',
-            // Removed types and typeRoots to avoid missing node type definitions
+        JSON.stringify(
+          {
+            compilerOptions: {
+              target: 'es2020',
+              module: 'commonjs',
+              outDir,
+              rootDir: '.',
+              // Removed types and typeRoots to avoid missing node type definitions
+            },
+            include: ['**/*.ts'],
           },
-          include: ["**/*.ts"],
-        }, null, 2),
+          null,
+          2,
+        ),
         'utf8',
       );
     }
@@ -39,7 +43,9 @@ export class TypeScriptEngine implements LanguageEngine {
     } else {
       try {
         // Try to resolve typescript from both __dirname and process.cwd()
-        const tsPackagePath = require.resolve('typescript/package.json', { paths: [__dirname, process.cwd()] });
+        const tsPackagePath = require.resolve('typescript/package.json', {
+          paths: [__dirname, process.cwd()],
+        });
         tscBin = path.join(path.dirname(tsPackagePath), require(tsPackagePath).bin.tsc);
       } catch (e) {
         tscBin = 'tsc';
@@ -54,15 +60,17 @@ export class TypeScriptEngine implements LanguageEngine {
     // } catch (e) {
     //   console.error('[Stonebox][TypeScriptEngine] Failed to list files in tempPath:', e);
     // }
-    const compileResult = await new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
-      const child = spawn(tscBin!, tscArgs, { cwd: task.tempPath });
-      let stdout = '';
-      let stderr = '';
-      child.stdout.on('data', (d) => (stdout += d.toString()));
-      child.stderr.on('data', (d) => (stderr += d.toString()));
-      child.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
-      child.on('error', () => resolve({ code: 1, stdout, stderr: 'Failed to spawn tsc' }));
-    });
+    const compileResult = await new Promise<{ code: number; stdout: string; stderr: string }>(
+      (resolve) => {
+        const child = spawn(tscBin!, tscArgs, { cwd: task.tempPath });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (d) => (stdout += d.toString()));
+        child.stderr.on('data', (d) => (stderr += d.toString()));
+        child.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
+        child.on('error', () => resolve({ code: 1, stdout, stderr: 'Failed to spawn tsc' }));
+      },
+    );
     if (compileResult.code !== 0) {
       // console.error('[Stonebox][TypeScriptEngine] tsc stderr:', compileResult.stderr);
       return new StoneboxCompilationError('TypeScript compilation failed.', {

@@ -5,7 +5,7 @@ import { LanguageEngine, ExecutionTask, PreparedCommand } from './types';
 export class PythonEngine implements LanguageEngine {
   async prepare(task: ExecutionTask): Promise<PreparedCommand> {
     // Prefer explicit pythonPath, then python3, then python
-    let pythonCmd = (task.options.languageOptions?.pythonPath as string);
+    let pythonCmd = task.options.languageOptions?.pythonPath as string;
     if (!pythonCmd) {
       pythonCmd = 'python3';
     }
@@ -24,7 +24,11 @@ export class PythonEngine implements LanguageEngine {
       const env = { ...process.env, ...task.options.env };
       if (memoryLimitMb) env.STONEBOX_MEMORY_LIMIT_MB = String(memoryLimitMb);
       if (processLimit) env.STONEBOX_PROCESS_LIMIT = String(processLimit);
-      env.STONEBOX_EXEC_ARGS = JSON.stringify([pythonCmd, task.entrypoint, ...(task.options.args || [])]);
+      env.STONEBOX_EXEC_ARGS = JSON.stringify([
+        pythonCmd,
+        task.entrypoint,
+        ...(task.options.args || []),
+      ]);
       return {
         command: pythonCmd,
         args: [limiterPath],

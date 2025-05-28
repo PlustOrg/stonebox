@@ -107,7 +107,7 @@ describe('TypeScriptEngine', () => {
     }
     expect(result).not.toBeInstanceOf(StoneboxCompilationError);
     if (!(result instanceof StoneboxCompilationError)) {
-      expect(result.args.some(arg => arg.includes('max-old-space-size=42'))).toBe(true);
+      expect(result.args.some((arg) => arg.includes('max-old-space-size=42'))).toBe(true);
     }
   });
 });

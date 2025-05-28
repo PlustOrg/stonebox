@@ -56,7 +56,10 @@ export class StoneboxRuntimeError extends StoneboxError {
   originalError?: Error | any;
   command?: string;
   args?: string[];
-  constructor(message: string, opts?: { originalError?: Error | any; command?: string; args?: string[] }) {
+  constructor(
+    message: string,
+    opts?: { originalError?: Error | any; command?: string; args?: string[] },
+  ) {
     super(message);
     this.name = 'StoneboxRuntimeError';
     if (opts) {

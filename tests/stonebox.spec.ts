@@ -1,4 +1,11 @@
-import { Stonebox, StoneboxTimeoutError, StoneboxCompilationError, StoneboxConfigurationError, StoneboxRuntimeError, StoneboxMemoryLimitError } from '../src';
+import {
+  Stonebox,
+  StoneboxTimeoutError,
+  StoneboxCompilationError,
+  StoneboxConfigurationError,
+  StoneboxRuntimeError,
+  StoneboxMemoryLimitError,
+} from '../src';
 
 describe('Stonebox JavaScript Execution', () => {
   it('should execute a simple JavaScript "hello world"', async () => {
@@ -12,7 +19,10 @@ describe('Stonebox JavaScript Execution', () => {
 
   it('should handle stdin for JavaScript', async () => {
     const sandbox = new Stonebox('javascript');
-    sandbox.addFile('main.js', 'process.stdin.on("data", data => console.log(data.toString().toUpperCase()));');
+    sandbox.addFile(
+      'main.js',
+      'process.stdin.on("data", data => console.log(data.toString().toUpperCase()));',
+    );
     const result = await sandbox.execute({ stdin: 'test input' });
     expect(result.stdout.trim()).toBe('TEST INPUT');
   });
@@ -112,7 +122,8 @@ describe('Stonebox TypeScript Execution', () => {
 
   it('should handle stdin for TypeScript', async () => {
     const sandbox = new Stonebox('typescript');
-    const tsCode = '// @ts-ignore\nprocess.stdin.on("data", data => console.log(data.toString().toUpperCase()));';
+    const tsCode =
+      '// @ts-ignore\nprocess.stdin.on("data", data => console.log(data.toString().toUpperCase()));';
     sandbox.addFile('main.ts', tsCode);
     let result;
     try {
@@ -197,14 +208,21 @@ describe('Stonebox General Functionality', () => {
 
 describe('Stonebox Error Subclasses', () => {
   it('should set properties on StoneboxTimeoutError', () => {
-    const err = new StoneboxTimeoutError('Timeout', { configuredTimeoutMs: 123, actualDurationMs: 456 });
+    const err = new StoneboxTimeoutError('Timeout', {
+      configuredTimeoutMs: 123,
+      actualDurationMs: 456,
+    });
     expect(err.configuredTimeoutMs).toBe(123);
     expect(err.actualDurationMs).toBe(456);
     expect(err).toBeInstanceOf(StoneboxTimeoutError);
   });
   it('should set properties on StoneboxRuntimeError', () => {
     const orig = new Error('fail');
-    const err = new StoneboxRuntimeError('Runtime', { originalError: orig, command: 'foo', args: ['bar'] });
+    const err = new StoneboxRuntimeError('Runtime', {
+      originalError: orig,
+      command: 'foo',
+      args: ['bar'],
+    });
     expect(err.originalError).toBe(orig);
     expect(err.command).toBe('foo');
     expect(err.args).toEqual(['bar']);
@@ -224,8 +242,12 @@ describe('Stonebox Invalid Configuration', () => {
     expect(() => new Stonebox('javascript', { timeoutMs: -1 })).toThrow(StoneboxConfigurationError);
   });
   it('should throw for invalid memoryLimitMb in constructor', () => {
-    expect(() => new Stonebox('javascript', { memoryLimitMb: 0 })).toThrow(StoneboxConfigurationError);
-    expect(() => new Stonebox('javascript', { memoryLimitMb: -1 })).toThrow(StoneboxConfigurationError);
+    expect(() => new Stonebox('javascript', { memoryLimitMb: 0 })).toThrow(
+      StoneboxConfigurationError,
+    );
+    expect(() => new Stonebox('javascript', { memoryLimitMb: -1 })).toThrow(
+      StoneboxConfigurationError,
+    );
   });
   it('should throw for invalid timeoutMs in execute', async () => {
     const s = new Stonebox('javascript');
@@ -268,7 +290,9 @@ describe('Stonebox File Path Validation', () => {
 
 describe('Stonebox UID/GID Options (Unix only)', () => {
   it('should accept uid/gid in languageOptions.executionOverrides (no error if not privileged)', async () => {
-    const s = new Stonebox('javascript', { languageOptions: { executionOverrides: { uid: 0, gid: 0 } } });
+    const s = new Stonebox('javascript', {
+      languageOptions: { executionOverrides: { uid: 0, gid: 0 } },
+    });
     s.addFile('main.js', 'console.log("uidgid")');
     // This may throw if not run as root, but should not throw a config error
     try {
@@ -301,7 +325,10 @@ const isLinux = process.platform === 'linux';
   });
   it('should kill process if process limit is exceeded', async () => {
     const s = new Stonebox('python', { languageOptions: { processLimit: 10 } });
-    s.addFile('main.py', 'import subprocess\nfor _ in range(100): subprocess.Popen(["echo", "hi"])');
+    s.addFile(
+      'main.py',
+      'import subprocess\nfor _ in range(100): subprocess.Popen(["echo", "hi"])',
+    );
     try {
       await s.execute();
       throw new Error('Expected process to be killed for process count');
