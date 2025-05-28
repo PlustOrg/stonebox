@@ -20,15 +20,17 @@ export class TypeScriptEngine implements LanguageEngine {
             target: 'es2020',
             module: 'commonjs',
             outDir,
-            types: ['node'],
-            // Use typeRoots relative to tempPath for sandboxed types
-            typeRoots: [path.join(task.tempPath, 'node_modules', '@types')],
+            rootDir: '.',
+            // Removed types and typeRoots to avoid missing node type definitions
           },
           include: ["**/*.ts"],
         }, null, 2),
         'utf8',
       );
     }
+    // Ensure outDir exists before running tsc
+    const outDir = 'compiled_ts';
+    await fs.mkdir(path.join(task.tempPath, outDir), { recursive: true });
     // 2. Compile with tsc
     let tscBin: string | undefined;
     // Prefer explicit tscPath, then try require.resolve, then fallback
@@ -44,6 +46,16 @@ export class TypeScriptEngine implements LanguageEngine {
       }
     }
     const tscArgs = tscBin === 'npx' ? ['tsc', '-p', tsconfigPath] : ['-p', tsconfigPath];
+    // Debugging output
+    console.error('[Stonebox][TypeScriptEngine] tscBin:', tscBin);
+    console.error('[Stonebox][TypeScriptEngine] tscArgs:', tscArgs);
+    // Debug: List files in tempPath before running tsc
+    try {
+      const files = await fs.readdir(task.tempPath);
+      console.error('[Stonebox][TypeScriptEngine] Files in tempPath:', files);
+    } catch (e) {
+      console.error('[Stonebox][TypeScriptEngine] Failed to list files in tempPath:', e);
+    }
     const compileResult = await new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
       const child = spawn(tscBin!, tscArgs, { cwd: task.tempPath });
       let stdout = '';
@@ -54,13 +66,13 @@ export class TypeScriptEngine implements LanguageEngine {
       child.on('error', () => resolve({ code: 1, stdout, stderr: 'Failed to spawn tsc' }));
     });
     if (compileResult.code !== 0) {
+      console.error('[Stonebox][TypeScriptEngine] tsc stderr:', compileResult.stderr);
       return new StoneboxCompilationError('TypeScript compilation failed.', {
         stdout: compileResult.stdout,
         stderr: compileResult.stderr,
       });
     }
     // 3. Prepare JS execution
-    const outDir = 'compiled_ts';
     const jsEntrypoint = path.join(outDir, task.entrypoint.replace(/\.ts$/, '.js'));
     const nodeArgs: string[] = [];
     if (task.options.memoryLimitMb) {

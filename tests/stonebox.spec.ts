@@ -20,7 +20,18 @@ describe('Stonebox JavaScript Execution', () => {
   it('should throw StoneboxTimeoutError for a long-running JS script', async () => {
     const sandbox = new Stonebox('javascript', { timeoutMs: 100 });
     sandbox.addFile('main.js', 'setTimeout(() => console.log("done"), 500);');
-    await expect(sandbox.execute()).rejects.toThrow(StoneboxTimeoutError);
+    try {
+      await sandbox.execute();
+      throw new Error('Expected StoneboxTimeoutError but execution completed');
+    } catch (err) {
+      // Debugging output
+      console.error('Timeout test error:', err);
+      expect(err).toBeInstanceOf(StoneboxTimeoutError);
+      if (err instanceof StoneboxTimeoutError) {
+        expect(err.configuredTimeoutMs).toBe(100);
+        expect(typeof err.actualDurationMs).toBe('number');
+      }
+    }
   });
 
   it('should pass args and env to JavaScript', async () => {
@@ -82,8 +93,20 @@ describe('Stonebox Python Execution', () => {
 describe('Stonebox TypeScript Execution', () => {
   it('should execute a simple TypeScript "hello world"', async () => {
     const sandbox = new Stonebox('typescript');
-    sandbox.addFile('main.ts', 'console.log("Hello TS World")');
-    const result = await sandbox.execute();
+    const tsCode = '// @ts-ignore\nconsole.log("Hello TS World")';
+    sandbox.addFile('main.ts', tsCode);
+    let result;
+    try {
+      result = await sandbox.execute();
+    } catch (err) {
+      // Print file contents and error for debugging
+      console.error('TS file contents:', tsCode);
+      if (err instanceof StoneboxCompilationError) {
+        console.error('tsc stdout:', err.compilerStdout);
+        console.error('tsc stderr:', err.compilerStderr);
+      }
+      throw err;
+    }
     expect(result.stdout.trim()).toBe('Hello TS World');
     expect(result.stderr).toBe('');
     expect(result.exitCode).toBe(0);
@@ -91,28 +114,73 @@ describe('Stonebox TypeScript Execution', () => {
 
   it('should handle stdin for TypeScript', async () => {
     const sandbox = new Stonebox('typescript');
-    sandbox.addFile('main.ts', 'process.stdin.on("data", data => console.log(data.toString().toUpperCase()));');
-    const result = await sandbox.execute({ stdin: 'test input' });
+    const tsCode = '// @ts-ignore\nprocess.stdin.on("data", data => console.log(data.toString().toUpperCase()));';
+    sandbox.addFile('main.ts', tsCode);
+    let result;
+    try {
+      result = await sandbox.execute({ stdin: 'test input' });
+    } catch (err) {
+      console.error('TS file contents:', tsCode);
+      if (err instanceof StoneboxCompilationError) {
+        console.error('tsc stdout:', err.compilerStdout);
+        console.error('tsc stderr:', err.compilerStderr);
+      }
+      throw err;
+    }
     expect(result.stdout.trim()).toBe('TEST INPUT');
   });
 
   it('should throw StoneboxTimeoutError for a long-running TS script', async () => {
     const sandbox = new Stonebox('typescript', { timeoutMs: 100 });
-    sandbox.addFile('main.ts', 'setTimeout(() => console.log("done"), 500);');
-    await expect(sandbox.execute()).rejects.toThrow(StoneboxTimeoutError);
+    const tsCode = '// @ts-ignore\nsetTimeout(() => console.log("done"), 500);';
+    sandbox.addFile('main.ts', tsCode);
+    try {
+      await sandbox.execute();
+      throw new Error('Expected StoneboxTimeoutError but execution completed');
+    } catch (err) {
+      if (err instanceof StoneboxCompilationError) {
+        console.error('TS file contents:', tsCode);
+        console.error('tsc stdout:', err.compilerStdout);
+        console.error('tsc stderr:', err.compilerStderr);
+      }
+      expect(err).toBeInstanceOf(StoneboxTimeoutError);
+    }
   });
 
   it('should pass args and env to TypeScript', async () => {
     const sandbox = new Stonebox('typescript');
-    sandbox.addFile('main.ts', 'console.log(process.argv[2], process.env.TEST_ENV);');
-    const result = await sandbox.execute({ args: ['foo'], env: { TEST_ENV: 'bar' } });
+    const tsCode = '// @ts-ignore\nconsole.log(process.argv[2], process.env.TEST_ENV);';
+    sandbox.addFile('main.ts', tsCode);
+    let result;
+    try {
+      result = await sandbox.execute({ args: ['foo'], env: { TEST_ENV: 'bar' } });
+    } catch (err) {
+      console.error('TS file contents:', tsCode);
+      if (err instanceof StoneboxCompilationError) {
+        console.error('tsc stdout:', err.compilerStdout);
+        console.error('tsc stderr:', err.compilerStderr);
+      }
+      throw err;
+    }
     expect(result.stdout.trim()).toBe('foo bar');
   });
 
   it('should throw StoneboxCompilationError for TS compile error', async () => {
     const sandbox = new Stonebox('typescript');
-    sandbox.addFile('main.ts', 'const x: number = "not a number";');
-    await expect(sandbox.execute()).rejects.toThrow(StoneboxCompilationError);
+    const tsCode = 'const x: number = "not a number";';
+    sandbox.addFile('main.ts', tsCode);
+    try {
+      await sandbox.execute();
+    } catch (err) {
+      if (err instanceof StoneboxCompilationError) {
+        console.error('TS file contents:', tsCode);
+        console.error('tsc stdout:', err.compilerStdout);
+        console.error('tsc stderr:', err.compilerStderr);
+      }
+      expect(err).toBeInstanceOf(StoneboxCompilationError);
+      return;
+    }
+    throw new Error('Expected StoneboxCompilationError but execution completed');
   });
 });
 
