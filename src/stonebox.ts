@@ -1,22 +1,23 @@
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import * as os from 'os';
-import { spawn } from 'child_process';
-import * as tmp from 'tmp';
-import { rimraf } from 'rimraf';
 import {
   StoneboxOptions,
   StoneboxExecuteOptions,
   StoneboxExecutionResult,
 } from './interfaces';
 import {
-  StoneboxError,
   StoneboxConfigurationError,
-  StoneboxTimeoutError,
   StoneboxCompilationError,
+  StoneboxTimeoutError,
   StoneboxMemoryLimitError,
   StoneboxRuntimeError,
 } from './errors';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import * as os from 'os';
+import { spawn } from 'child_process';
+import { rimraf } from 'rimraf';
+import { JavaScriptEngine } from './engines/javascriptEngine';
+import { PythonEngine } from './engines/pythonEngine';
+import { TypeScriptEngine } from './engines/typescriptEngine';
 
 export class Stonebox {
   private language: string;
@@ -93,58 +94,77 @@ export class Stonebox {
         throw preparedCmd;
       }
       // Spawn process
-      const { command, args, env, cwd } = preparedCmd;
-      const child = spawn(command, args, {
-        cwd,
-        env: { ...process.env, ...env },
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-      let stdout = '';
-      let stderr = '';
-      let exited = false;
-      let exitCode: number | null = null;
-      let signal: string | null = null;
-      const start = Date.now();
-      child.stdout.on('data', (data) => {
-        stdout += data.toString();
-      });
-      child.stderr.on('data', (data) => {
-        stderr += data.toString();
-      });
-      if (mergedOptions.stdin) {
-        child.stdin.write(mergedOptions.stdin);
-        child.stdin.end();
-      }
-      const timeout = setTimeout(() => {
-        if (!exited) {
-          child.kill('SIGTERM');
-          setTimeout(() => child.kill('SIGKILL'), 500);
-        }
-      }, timeoutMs);
-      return await new Promise<StoneboxExecutionResult>((resolve, reject) => {
-        child.on('error', (err) => {
-          clearTimeout(timeout);
-          reject(new StoneboxRuntimeError(err.message));
-        });
-        child.on('exit', (code, sig) => {
-          clearTimeout(timeout);
-          exited = true;
-          exitCode = code;
-          signal = sig;
-          const durationMs = Date.now() - start;
-          if (sig === 'SIGTERM' || sig === 'SIGKILL') {
-            reject(new StoneboxTimeoutError('Process timed out.'));
-          } else {
-            resolve({ stdout, stderr, exitCode, signal, durationMs });
-          }
-        });
-      });
+      return await this.spawnAndCollect(preparedCmd, mergedOptions, timeoutMs);
     } finally {
       await rimraf(tempDir);
     }
   }
 
   private getEngineFor(language: string): any {
-    throw new StoneboxConfigurationError('Engine selection not implemented.');
+    switch (language) {
+      case 'javascript':
+        return new JavaScriptEngine();
+      case 'python':
+        return new PythonEngine();
+      case 'typescript':
+        return new TypeScriptEngine();
+      default:
+        throw new StoneboxConfigurationError('Engine selection not implemented.');
+    }
+  }
+
+  private async spawnAndCollect(
+    preparedCmd: { command: string; args: string[]; env: Record<string, string | undefined>; cwd: string },
+    options: StoneboxExecuteOptions & StoneboxOptions,
+    timeoutMs: number,
+  ): Promise<StoneboxExecutionResult> {
+    return new Promise<StoneboxExecutionResult>((resolve, reject) => {
+      const start = Date.now();
+      const child = spawn(preparedCmd.command, preparedCmd.args, {
+        cwd: preparedCmd.cwd,
+        env: preparedCmd.env,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      let stdout = '';
+      let stderr = '';
+      let finished = false;
+      let killedByTimeout = false;
+      const timeout = setTimeout(() => {
+        killedByTimeout = true;
+        child.kill('SIGTERM');
+        setTimeout(() => child.kill('SIGKILL'), 500);
+      }, timeoutMs);
+      child.stdout.on('data', (d) => (stdout += d.toString()));
+      child.stderr.on('data', (d) => (stderr += d.toString()));
+      if (options.stdin) {
+        child.stdin.write(options.stdin);
+        child.stdin.end();
+      } else {
+        child.stdin.end();
+      }
+      child.on('error', (err) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timeout);
+        reject(new StoneboxRuntimeError(err.message));
+      });
+      child.on('exit', (code, signal) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timeout);
+        const durationMs = Date.now() - start;
+        if (killedByTimeout) {
+          reject(new StoneboxTimeoutError('Process timed out.'));
+        } else {
+          resolve({
+            stdout,
+            stderr,
+            exitCode: code,
+            signal: signal ?? null,
+            durationMs,
+          });
+        }
+      });
+    });
   }
 }
