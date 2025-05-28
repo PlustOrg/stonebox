@@ -45,17 +45,15 @@ export class TypeScriptEngine implements LanguageEngine {
         tscBin = 'tsc';
       }
     }
+    // const tscArgs = tscBin === 'npx' ? ['tsc', '-p', tsconfigPath] : ['-p', tsconfigPath];
     const tscArgs = tscBin === 'npx' ? ['tsc', '-p', tsconfigPath] : ['-p', tsconfigPath];
-    // Debugging output
-    console.error('[Stonebox][TypeScriptEngine] tscBin:', tscBin);
-    console.error('[Stonebox][TypeScriptEngine] tscArgs:', tscArgs);
-    // Debug: List files in tempPath before running tsc
-    try {
-      const files = await fs.readdir(task.tempPath);
-      console.error('[Stonebox][TypeScriptEngine] Files in tempPath:', files);
-    } catch (e) {
-      console.error('[Stonebox][TypeScriptEngine] Failed to list files in tempPath:', e);
-    }
+    // Debugging output removed
+    // try {
+    //   const files = await fs.readdir(task.tempPath);
+    //   console.error('[Stonebox][TypeScriptEngine] Files in tempPath:', files);
+    // } catch (e) {
+    //   console.error('[Stonebox][TypeScriptEngine] Failed to list files in tempPath:', e);
+    // }
     const compileResult = await new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
       const child = spawn(tscBin!, tscArgs, { cwd: task.tempPath });
       let stdout = '';
@@ -66,7 +64,7 @@ export class TypeScriptEngine implements LanguageEngine {
       child.on('error', () => resolve({ code: 1, stdout, stderr: 'Failed to spawn tsc' }));
     });
     if (compileResult.code !== 0) {
-      console.error('[Stonebox][TypeScriptEngine] tsc stderr:', compileResult.stderr);
+      // console.error('[Stonebox][TypeScriptEngine] tsc stderr:', compileResult.stderr);
       return new StoneboxCompilationError('TypeScript compilation failed.', {
         stdout: compileResult.stdout,
         stderr: compileResult.stderr,

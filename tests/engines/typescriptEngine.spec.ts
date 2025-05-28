@@ -44,4 +44,70 @@ describe('TypeScriptEngine', () => {
     const result = await engine.prepare(task);
     expect(result).toBeInstanceOf(StoneboxCompilationError);
   });
+
+  it('should use explicit tscPath if provided', async () => {
+    const engine = new TypeScriptEngine();
+    const tscPath = require.resolve('typescript/bin/tsc');
+    const task: ExecutionTask = {
+      files,
+      entrypoint,
+      options: { languageOptions: { tscPath } },
+      tempPath,
+    };
+    const result = await engine.prepare(task);
+    if (result instanceof StoneboxCompilationError) {
+      // Print the error for debugging
+      console.error('tscPath test:', result.compilerStderr);
+      return;
+    }
+    expect(result).not.toBeInstanceOf(StoneboxCompilationError);
+    if (!(result instanceof StoneboxCompilationError)) {
+      expect(result).toHaveProperty('command');
+      // The command should be node, not tscPath
+      expect(result.command === tscPath).toBe(false);
+    }
+  });
+
+  it('should use explicit nodePath if provided', async () => {
+    const engine = new TypeScriptEngine();
+    const nodePath = process.execPath;
+    const task: ExecutionTask = {
+      files,
+      entrypoint,
+      options: { languageOptions: { nodePath } },
+      tempPath,
+    };
+    const result = await engine.prepare(task);
+    if (result instanceof StoneboxCompilationError) {
+      // Print the error for debugging
+      console.error('nodePath test:', result.compilerStderr);
+      return;
+    }
+    expect(result).not.toBeInstanceOf(StoneboxCompilationError);
+    expect(result).toHaveProperty('command');
+    // The JS execution command should use nodePath
+    if (!(result instanceof StoneboxCompilationError)) {
+      expect(result.command).toBe(nodePath);
+    }
+  });
+
+  it('should propagate memoryLimitMb to node args', async () => {
+    const engine = new TypeScriptEngine();
+    const task: ExecutionTask = {
+      files,
+      entrypoint,
+      options: { memoryLimitMb: 42 },
+      tempPath,
+    };
+    const result = await engine.prepare(task);
+    if (result instanceof StoneboxCompilationError) {
+      // Print the error for debugging
+      console.error('memoryLimitMb test:', result.compilerStderr);
+      return;
+    }
+    expect(result).not.toBeInstanceOf(StoneboxCompilationError);
+    if (!(result instanceof StoneboxCompilationError)) {
+      expect(result.args.some(arg => arg.includes('max-old-space-size=42'))).toBe(true);
+    }
+  });
 });

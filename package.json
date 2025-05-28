@@ -1,6 +1,6 @@
 {
   "name": "@plust/stonebox",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
@@ -17,6 +17,7 @@
   "license": "ISC",
   "description": "",
   "devDependencies": {
+    "@eslint/js": "^9.27.0",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.15.23",
     "@types/tmp": "^0.2.6",
@@ -34,5 +35,6 @@
   "dependencies": {
     "rimraf": "^6.0.1",
     "tmp": "^0.2.3"
-  }
+  },
+  "type": "module"
 }

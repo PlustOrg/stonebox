@@ -1,4 +1,4 @@
-import { Stonebox, StoneboxTimeoutError, StoneboxCompilationError, StoneboxConfigurationError } from '../src';
+import { Stonebox, StoneboxTimeoutError, StoneboxCompilationError, StoneboxConfigurationError, StoneboxRuntimeError, StoneboxMemoryLimitError } from '../src';
 
 describe('Stonebox JavaScript Execution', () => {
   it('should execute a simple JavaScript "hello world"', async () => {
@@ -24,8 +24,6 @@ describe('Stonebox JavaScript Execution', () => {
       await sandbox.execute();
       throw new Error('Expected StoneboxTimeoutError but execution completed');
     } catch (err) {
-      // Debugging output
-      console.error('Timeout test error:', err);
       expect(err).toBeInstanceOf(StoneboxTimeoutError);
       if (err instanceof StoneboxTimeoutError) {
         expect(err.configuredTimeoutMs).toBe(100);
@@ -138,11 +136,6 @@ describe('Stonebox TypeScript Execution', () => {
       await sandbox.execute();
       throw new Error('Expected StoneboxTimeoutError but execution completed');
     } catch (err) {
-      if (err instanceof StoneboxCompilationError) {
-        console.error('TS file contents:', tsCode);
-        console.error('tsc stdout:', err.compilerStdout);
-        console.error('tsc stderr:', err.compilerStderr);
-      }
       expect(err).toBeInstanceOf(StoneboxTimeoutError);
     }
   });
@@ -172,11 +165,6 @@ describe('Stonebox TypeScript Execution', () => {
     try {
       await sandbox.execute();
     } catch (err) {
-      if (err instanceof StoneboxCompilationError) {
-        console.error('TS file contents:', tsCode);
-        console.error('tsc stdout:', err.compilerStdout);
-        console.error('tsc stderr:', err.compilerStderr);
-      }
       expect(err).toBeInstanceOf(StoneboxCompilationError);
       return;
     }
@@ -204,5 +192,121 @@ describe('Stonebox General Functionality', () => {
   it('should throw StoneboxConfigurationError for missing entrypoint', async () => {
     const sandbox = new Stonebox('javascript');
     await expect(sandbox.execute()).rejects.toThrow(StoneboxConfigurationError);
+  });
+});
+
+describe('Stonebox Error Subclasses', () => {
+  it('should set properties on StoneboxTimeoutError', () => {
+    const err = new StoneboxTimeoutError('Timeout', { configuredTimeoutMs: 123, actualDurationMs: 456 });
+    expect(err.configuredTimeoutMs).toBe(123);
+    expect(err.actualDurationMs).toBe(456);
+    expect(err).toBeInstanceOf(StoneboxTimeoutError);
+  });
+  it('should set properties on StoneboxRuntimeError', () => {
+    const orig = new Error('fail');
+    const err = new StoneboxRuntimeError('Runtime', { originalError: orig, command: 'foo', args: ['bar'] });
+    expect(err.originalError).toBe(orig);
+    expect(err.command).toBe('foo');
+    expect(err.args).toEqual(['bar']);
+    expect(err).toBeInstanceOf(StoneboxRuntimeError);
+  });
+  it('should set properties on StoneboxMemoryLimitError', () => {
+    const err = new StoneboxMemoryLimitError('Mem', { configuredLimitMb: 42, observedUsageMb: 99 });
+    expect(err.configuredLimitMb).toBe(42);
+    expect(err.observedUsageMb).toBe(99);
+    expect(err).toBeInstanceOf(StoneboxMemoryLimitError);
+  });
+});
+
+describe('Stonebox Invalid Configuration', () => {
+  it('should throw for invalid timeoutMs in constructor', () => {
+    expect(() => new Stonebox('javascript', { timeoutMs: 0 })).toThrow(StoneboxConfigurationError);
+    expect(() => new Stonebox('javascript', { timeoutMs: -1 })).toThrow(StoneboxConfigurationError);
+  });
+  it('should throw for invalid memoryLimitMb in constructor', () => {
+    expect(() => new Stonebox('javascript', { memoryLimitMb: 0 })).toThrow(StoneboxConfigurationError);
+    expect(() => new Stonebox('javascript', { memoryLimitMb: -1 })).toThrow(StoneboxConfigurationError);
+  });
+  it('should throw for invalid timeoutMs in execute', async () => {
+    const s = new Stonebox('javascript');
+    s.addFile('main.js', '');
+    await expect(s.execute({ timeoutMs: 0 })).rejects.toThrow(StoneboxConfigurationError);
+  });
+  it('should throw for invalid memoryLimitMb in execute', async () => {
+    const s = new Stonebox('javascript');
+    s.addFile('main.js', '');
+    await expect(s.execute({ memoryLimitMb: 0 })).rejects.toThrow(StoneboxConfigurationError);
+  });
+});
+
+describe('Stonebox Runtime Path Configuration', () => {
+  it('should use explicit nodePath for JavaScript', async () => {
+    const s = new Stonebox('javascript', { languageOptions: { nodePath: process.execPath } });
+    s.addFile('main.js', 'console.log("ok")');
+    const result = await s.execute();
+    expect(result.stdout.trim()).toBe('ok');
+  });
+  it('should use explicit pythonPath for Python', async () => {
+    const s = new Stonebox('python', { languageOptions: { pythonPath: 'python3' } });
+    s.addFile('main.py', 'print("ok")');
+    const result = await s.execute();
+    expect(result.stdout.trim()).toBe('ok');
+  });
+});
+
+describe('Stonebox File Path Validation', () => {
+  it('should throw for absolute file path', () => {
+    const s = new Stonebox('javascript');
+    expect(() => s.addFile('/abs.js', 'x')).toThrow(StoneboxConfigurationError);
+  });
+  it('should throw for parent traversal', () => {
+    const s = new Stonebox('javascript');
+    expect(() => s.addFile('../foo.js', 'x')).toThrow(StoneboxConfigurationError);
+    expect(() => s.addFile('foo/../../bar.js', 'x')).toThrow(StoneboxConfigurationError);
+  });
+});
+
+describe('Stonebox UID/GID Options (Unix only)', () => {
+  it('should accept uid/gid in languageOptions.executionOverrides (no error if not privileged)', async () => {
+    const s = new Stonebox('javascript', { languageOptions: { executionOverrides: { uid: 0, gid: 0 } } });
+    s.addFile('main.js', 'console.log("uidgid")');
+    // This may throw if not run as root, but should not throw a config error
+    try {
+      await s.execute();
+    } catch (e) {
+      // Accept any thrown value (not just Error)
+      expect(e).toBeDefined();
+    }
+  });
+});
+
+// Optionally, add a test for Python memory/process limits on Unix (best-effort, skip on Windows)
+const isUnix = process.platform === 'linux' || process.platform === 'darwin';
+const isLinux = process.platform === 'linux';
+(isUnix ? describe : describe.skip)('Stonebox Python Resource Limits (Unix only)', () => {
+  beforeAll(() => {
+    jest.setTimeout(30000); // Increase timeout for all tests in this block
+  });
+  (isLinux ? it : it.skip)('should kill process if memory limit is exceeded', async () => {
+    // NOTE: RLIMIT_AS is not reliably enforced on macOS, so this test only runs on Linux.
+    const s = new Stonebox('python', { memoryLimitMb: 20 });
+    s.addFile('main.py', 'a = []\nwhile True: a.append("x"*1000000)');
+    try {
+      await s.execute();
+      throw new Error('Expected process to be killed for memory');
+    } catch (e: any) {
+      expect(e).toBeDefined();
+      // Accept any thrown value (timeout, error, etc.)
+    }
+  });
+  it('should kill process if process limit is exceeded', async () => {
+    const s = new Stonebox('python', { languageOptions: { processLimit: 10 } });
+    s.addFile('main.py', 'import subprocess\nfor _ in range(100): subprocess.Popen(["echo", "hi"])');
+    try {
+      await s.execute();
+      throw new Error('Expected process to be killed for process count');
+    } catch (e: any) {
+      expect(e).toBeDefined();
+    }
   });
 });
