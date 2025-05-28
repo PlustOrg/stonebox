@@ -4,7 +4,11 @@ export interface StoneboxLanguageOptions {
   pythonPath?: string;
   nodePath?: string;
   tscPath?: string;
-  // For future: processLimit, uid, gid, executionOverrides, etc.
+  processLimit?: number; // Unix: max number of processes for Python
+  executionOverrides?: {
+    uid?: number;
+    gid?: number;
+  };
   [key: string]: any;
 }
 

@@ -13,7 +13,7 @@ import {
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { rimraf } from 'rimraf';
 import { JavaScriptEngine } from './engines/javascriptEngine';
 import { PythonEngine } from './engines/pythonEngine';
@@ -23,6 +23,7 @@ export class Stonebox {
   private language: string;
   private options: StoneboxOptions;
   private files: Map<string, string> = new Map();
+  private static checkedLanguages = new Set<string>();
 
   constructor(language: string, options: StoneboxOptions = {}) {
     this.language = language.toLowerCase();
@@ -42,7 +43,11 @@ export class Stonebox {
   }
 
   public addFile(filePath: string, content: string): void {
-    this.files.set(filePath, content);
+    const normalizedPath = path.normalize(filePath);
+    if (normalizedPath.includes('..') || path.isAbsolute(normalizedPath)) {
+      throw new StoneboxConfigurationError("Invalid file path: must be relative and within the sandbox.");
+    }
+    this.files.set(normalizedPath, content);
   }
 
   public addFiles(files: Array<{ path: string; content: string }>): void {
@@ -131,6 +136,49 @@ export class Stonebox {
   }
 
   private getEngineFor(language: string): any {
+    // Step 3.3: Pre-flight runtime check on first use
+    if (!Stonebox.checkedLanguages.has(language)) {
+      let checkCmd: string | undefined;
+      let checkArgs: string[] = [];
+      let failMsg: string | undefined;
+      switch (language) {
+        case 'python': {
+          // Prefer explicit pythonPath if set
+          const pythonPath = this.options.languageOptions?.pythonPath as string | undefined;
+          checkCmd = pythonPath || 'python3';
+          checkArgs = ['--version'];
+          failMsg = `Python runtime not found or not working (tried: ${checkCmd} --version)`;
+          break;
+        }
+        case 'javascript': {
+          // Node.js: check process.execPath
+          checkCmd = (this.options.languageOptions?.nodePath as string) || process.execPath;
+          checkArgs = ['--version'];
+          failMsg = `Node.js runtime not found or not working (tried: ${checkCmd} --version)`;
+          break;
+        }
+        case 'typescript': {
+          // Check tsc
+          const tscPath = this.options.languageOptions?.tscPath as string | undefined;
+          checkCmd = tscPath || 'tsc';
+          checkArgs = ['--version'];
+          failMsg = `TypeScript compiler (tsc) not found or not working (tried: ${checkCmd} --version)`;
+          break;
+        }
+        default:
+          throw new StoneboxConfigurationError('Engine selection not implemented.');
+      }
+      try {
+        const result = spawnSync(checkCmd, checkArgs, { encoding: 'utf8' });
+        if (result.error || result.status !== 0) {
+          throw new Error(result.error ? result.error.message : result.stderr || 'Unknown error');
+        }
+      } catch (e: any) {
+        throw new StoneboxConfigurationError(failMsg + (e?.message ? `: ${e.message}` : ''));
+      }
+      Stonebox.checkedLanguages.add(language);
+    }
+    // ...existing code...
     switch (language) {
       case 'javascript':
         return new JavaScriptEngine();
@@ -152,12 +200,20 @@ export class Stonebox {
       const start = Date.now();
       const abortController = new AbortController();
       let killedByTimeout = false;
-      const child = spawn(preparedCmd.command, preparedCmd.args, {
+      // 3.2: Add uid/gid support for Unix
+      const spawnOpts: any = {
         cwd: preparedCmd.cwd,
         env: preparedCmd.env,
         stdio: ['pipe', 'pipe', 'pipe'],
         signal: abortController.signal,
-      });
+      };
+      const mergedOptions = options;
+      if ((os.platform() === 'linux' || os.platform() === 'darwin') && mergedOptions.languageOptions?.executionOverrides) {
+        const overrides = mergedOptions.languageOptions.executionOverrides;
+        if (typeof overrides.uid === 'number') spawnOpts.uid = overrides.uid;
+        if (typeof overrides.gid === 'number') spawnOpts.gid = overrides.gid;
+      }
+      const child = spawn(preparedCmd.command, preparedCmd.args, spawnOpts);
       let stdout = '';
       let stderr = '';
       let finished = false;
