@@ -10,8 +10,10 @@ export class JavaScriptEngine implements LanguageEngine {
     if (task.options.args) {
       nodeArgs.push(...task.options.args);
     }
+    // Prefer explicit nodePath, then process.execPath
+    const nodeCmd = (task.options.languageOptions?.nodePath as string) || process.execPath;
     return {
-      command: process.execPath,
+      command: nodeCmd,
       args: nodeArgs,
       env: { ...process.env, ...task.options.env },
       cwd: task.tempPath,

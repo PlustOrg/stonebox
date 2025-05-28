@@ -32,6 +32,13 @@ export class Stonebox {
         `Unsupported language: ${language}`
       );
     }
+    // Validate options.timeoutMs and memoryLimitMb if provided
+    if (options.timeoutMs !== undefined && (typeof options.timeoutMs !== 'number' || options.timeoutMs <= 0)) {
+      throw new StoneboxConfigurationError('timeoutMs must be a positive number');
+    }
+    if (options.memoryLimitMb !== undefined && (typeof options.memoryLimitMb !== 'number' || options.memoryLimitMb <= 0)) {
+      throw new StoneboxConfigurationError('memoryLimitMb must be a positive number');
+    }
   }
 
   public addFile(filePath: string, content: string): void {
@@ -56,18 +63,41 @@ export class Stonebox {
       ...this.options,
       ...executeOptionsInput,
     };
+    // Validate mergedOptions.timeoutMs and memoryLimitMb
+    if (mergedOptions.timeoutMs !== undefined && (typeof mergedOptions.timeoutMs !== 'number' || mergedOptions.timeoutMs <= 0)) {
+      throw new StoneboxConfigurationError('timeoutMs must be a positive number');
+    }
+    if (mergedOptions.memoryLimitMb !== undefined && (typeof mergedOptions.memoryLimitMb !== 'number' || mergedOptions.memoryLimitMb <= 0)) {
+      throw new StoneboxConfigurationError('memoryLimitMb must be a positive number');
+    }
     const timeoutMs = mergedOptions.timeoutMs ?? 5000;
-    const entrypoint =
-      mergedOptions.entrypoint ?? Array.from(this.files.keys())[0];
+    // Entrypoint logic: if not set, use first file (insertion order)
+    let entrypoint = mergedOptions.entrypoint ?? this.options.entrypoint;
+    if (!entrypoint) {
+      if (this.files.size > 1) {
+        // Document fallback to first file
+        // throw new StoneboxConfigurationError('Multiple files added but no entrypoint specified. Please specify an entrypoint.');
+        entrypoint = Array.from(this.files.keys())[0];
+        // Note: fallback to first file added (insertion order)
+      } else {
+        entrypoint = Array.from(this.files.keys())[0];
+      }
+    }
     if (!entrypoint) {
       throw new StoneboxConfigurationError(
         'No entrypoint specified and no files added.'
       );
     }
     if (!this.files.has(entrypoint)) {
-      throw new StoneboxConfigurationError(
-        `Entrypoint file not found: ${entrypoint}`
-      );
+      // Improve error message: list available files if small, else suggest checking
+      const available = Array.from(this.files.keys());
+      let msg = `Entrypoint file not found: ${entrypoint}.`;
+      if (available.length <= 5) {
+        msg += ` Available files: ${available.join(', ')}`;
+      } else {
+        msg += ' Please check the files you have added.';
+      }
+      throw new StoneboxConfigurationError(msg);
     }
     if (this.files.size === 0) {
       throw new StoneboxConfigurationError('No files added to Stonebox.');
@@ -120,19 +150,27 @@ export class Stonebox {
   ): Promise<StoneboxExecutionResult> {
     return new Promise<StoneboxExecutionResult>((resolve, reject) => {
       const start = Date.now();
+      const abortController = new AbortController();
+      let killedByTimeout = false;
       const child = spawn(preparedCmd.command, preparedCmd.args, {
         cwd: preparedCmd.cwd,
         env: preparedCmd.env,
         stdio: ['pipe', 'pipe', 'pipe'],
+        signal: abortController.signal,
       });
       let stdout = '';
       let stderr = '';
       let finished = false;
-      let killedByTimeout = false;
-      const timeout = setTimeout(() => {
+      const timeoutHandle = setTimeout(() => {
         killedByTimeout = true;
+        abortController.abort();
         child.kill('SIGTERM');
-        setTimeout(() => child.kill('SIGKILL'), 500);
+        const forceKillTimeout = setTimeout(() => {
+          if (!child.killed) {
+            child.kill('SIGKILL');
+          }
+        }, 500);
+        child.on('exit', () => clearTimeout(forceKillTimeout));
       }, timeoutMs);
       child.stdout.on('data', (d) => (stdout += d.toString()));
       child.stderr.on('data', (d) => (stderr += d.toString()));
@@ -142,19 +180,33 @@ export class Stonebox {
       } else {
         child.stdin.end();
       }
-      child.on('error', (err) => {
+      child.on('error', (err: any) => {
         if (finished) return;
         finished = true;
-        clearTimeout(timeout);
-        reject(new StoneboxRuntimeError(err.message));
+        clearTimeout(timeoutHandle);
+        if (err.name === 'AbortError' || abortController.signal.aborted) {
+          reject(new StoneboxTimeoutError('Process timed out.', {
+            configuredTimeoutMs: timeoutMs,
+            actualDurationMs: Date.now() - start,
+          }));
+        } else {
+          reject(new StoneboxRuntimeError(err.message, {
+            originalError: err,
+            command: preparedCmd.command,
+            args: preparedCmd.args,
+          }));
+        }
       });
       child.on('exit', (code, signal) => {
         if (finished) return;
         finished = true;
-        clearTimeout(timeout);
+        clearTimeout(timeoutHandle);
         const durationMs = Date.now() - start;
-        if (killedByTimeout) {
-          reject(new StoneboxTimeoutError('Process timed out.'));
+        if (killedByTimeout || abortController.signal.aborted) {
+          reject(new StoneboxTimeoutError('Process timed out.', {
+            configuredTimeoutMs: timeoutMs,
+            actualDurationMs: durationMs,
+          }));
         } else {
           resolve({
             stdout,

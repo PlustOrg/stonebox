@@ -14,9 +14,16 @@ export class StoneboxConfigurationError extends StoneboxError {
 }
 
 export class StoneboxTimeoutError extends StoneboxError {
-  constructor(message: string) {
+  configuredTimeoutMs?: number;
+  actualDurationMs?: number;
+  constructor(message: string, opts?: { configuredTimeoutMs?: number; actualDurationMs?: number }) {
     super(message);
     this.name = 'StoneboxTimeoutError';
+    if (opts) {
+      this.configuredTimeoutMs = opts.configuredTimeoutMs;
+      this.actualDurationMs = opts.actualDurationMs;
+    }
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
 
@@ -32,15 +39,31 @@ export class StoneboxCompilationError extends StoneboxError {
 }
 
 export class StoneboxMemoryLimitError extends StoneboxError {
-  constructor(message: string) {
+  configuredLimitMb?: number;
+  observedUsageMb?: number;
+  constructor(message: string, opts?: { configuredLimitMb?: number; observedUsageMb?: number }) {
     super(message);
     this.name = 'StoneboxMemoryLimitError';
+    if (opts) {
+      this.configuredLimitMb = opts.configuredLimitMb;
+      this.observedUsageMb = opts.observedUsageMb;
+    }
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
 
 export class StoneboxRuntimeError extends StoneboxError {
-  constructor(message: string) {
+  originalError?: Error | any;
+  command?: string;
+  args?: string[];
+  constructor(message: string, opts?: { originalError?: Error | any; command?: string; args?: string[] }) {
     super(message);
     this.name = 'StoneboxRuntimeError';
+    if (opts) {
+      this.originalError = opts.originalError;
+      this.command = opts.command;
+      this.args = opts.args;
+    }
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }

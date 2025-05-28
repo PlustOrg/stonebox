@@ -1,5 +1,13 @@
 // All public interfaces (to be implemented in later phases)
 
+export interface StoneboxLanguageOptions {
+  pythonPath?: string;
+  nodePath?: string;
+  tscPath?: string;
+  // For future: processLimit, uid, gid, executionOverrides, etc.
+  [key: string]: any;
+}
+
 export interface StoneboxOptions {
   timeoutMs?: number; // Max execution time in ms
   memoryLimitMb?: number; // Max memory in MB (Node.js only)
@@ -7,7 +15,7 @@ export interface StoneboxOptions {
   args?: string[]; // Default args
   stdin?: string; // Default stdin
   env?: Record<string, string | undefined>; // Default environment variables
-  languageOptions?: Record<string, any>; // Language-specific options
+  languageOptions?: StoneboxLanguageOptions; // Language-specific options
 }
 
 export interface StoneboxExecuteOptions {
@@ -17,7 +25,7 @@ export interface StoneboxExecuteOptions {
   args?: string[];
   stdin?: string;
   env?: Record<string, string | undefined>;
-  languageOptions?: Record<string, any>;
+  languageOptions?: StoneboxLanguageOptions;
 }
 
 export interface StoneboxExecutionResult {

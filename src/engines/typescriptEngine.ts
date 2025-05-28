@@ -8,10 +8,8 @@ export class TypeScriptEngine implements LanguageEngine {
   async prepare(task: ExecutionTask): Promise<PreparedCommand | StoneboxCompilationError> {
     // 1. Write a default tsconfig.json if not present
     const tsconfigPath = path.join(task.tempPath, 'tsconfig.json');
-    let hasTsconfig = false;
     try {
       await fs.access(tsconfigPath);
-      hasTsconfig = true;
     } catch {
       // No tsconfig.json, write a default one
       const outDir = 'compiled_ts';
@@ -22,27 +20,32 @@ export class TypeScriptEngine implements LanguageEngine {
             target: 'es2020',
             module: 'commonjs',
             outDir,
+            types: ['node'],
+            // Use typeRoots relative to tempPath for sandboxed types
+            typeRoots: [path.join(task.tempPath, 'node_modules', '@types')],
           },
-          include: ['**/*.ts'],
+          include: ["**/*.ts"],
         }, null, 2),
         'utf8',
       );
     }
     // 2. Compile with tsc
-    const tscBin = path.join(
-      task.tempPath,
-      '..',
-      '..',
-      'node_modules',
-      '.bin',
-      process.platform === 'win32' ? 'tsc.cmd' : 'tsc',
-    );
+    let tscBin: string | undefined;
+    // Prefer explicit tscPath, then try require.resolve, then fallback
+    if (task.options.languageOptions?.tscPath) {
+      tscBin = task.options.languageOptions.tscPath;
+    } else {
+      try {
+        // Try to resolve typescript from both __dirname and process.cwd()
+        const tsPackagePath = require.resolve('typescript/package.json', { paths: [__dirname, process.cwd()] });
+        tscBin = path.join(path.dirname(tsPackagePath), require(tsPackagePath).bin.tsc);
+      } catch (e) {
+        tscBin = 'tsc';
+      }
+    }
+    const tscArgs = tscBin === 'npx' ? ['tsc', '-p', tsconfigPath] : ['-p', tsconfigPath];
     const compileResult = await new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
-      const child = spawn(
-        tscBin,
-        ['-p', tsconfigPath],
-        { cwd: task.tempPath }
-      );
+      const child = spawn(tscBin!, tscArgs, { cwd: task.tempPath });
       let stdout = '';
       let stderr = '';
       child.stdout.on('data', (d) => (stdout += d.toString()));
@@ -67,8 +70,10 @@ export class TypeScriptEngine implements LanguageEngine {
     if (task.options.args) {
       nodeArgs.push(...task.options.args);
     }
+    // Prefer explicit nodePath, then process.execPath
+    const nodeCmd = (task.options.languageOptions?.nodePath as string) || process.execPath;
     return {
-      command: process.execPath,
+      command: nodeCmd,
       args: nodeArgs,
       env: { ...process.env, ...task.options.env },
       cwd: task.tempPath,
