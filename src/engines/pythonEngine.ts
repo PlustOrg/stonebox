@@ -1,6 +1,9 @@
 import * as os from 'os';
 import * as path from 'path';
 import { LanguageEngine, ExecutionTask, PreparedCommand } from './types';
+import { buildSandboxEnv } from '../utils/envUtils';
+
+declare const __dirname: string;
 
 export class PythonEngine implements LanguageEngine {
   async prepare(task: ExecutionTask): Promise<PreparedCommand> {
@@ -21,7 +24,7 @@ export class PythonEngine implements LanguageEngine {
     if (isUnix && (memoryLimitMb || processLimit)) {
       // Use the unixResourceLimiter.py script
       const limiterPath = path.resolve(__dirname, '../utils/unixResourceLimiter.py');
-      const env = { ...process.env, ...task.options.env };
+      const env = buildSandboxEnv(task.options.env);
       if (memoryLimitMb) env.STONEBOX_MEMORY_LIMIT_MB = String(memoryLimitMb);
       if (processLimit) env.STONEBOX_PROCESS_LIMIT = String(processLimit);
       env.STONEBOX_EXEC_ARGS = JSON.stringify([
@@ -39,7 +42,7 @@ export class PythonEngine implements LanguageEngine {
     return {
       command: pythonCmd,
       args,
-      env: { ...process.env, ...task.options.env },
+      env: buildSandboxEnv(task.options.env),
       cwd: task.tempPath,
     };
   }

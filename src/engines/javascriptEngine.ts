@@ -1,4 +1,6 @@
+import process from 'process';
 import { LanguageEngine, ExecutionTask, PreparedCommand } from './types';
+import { buildSandboxEnv } from '../utils/envUtils';
 
 export class JavaScriptEngine implements LanguageEngine {
   async prepare(task: ExecutionTask): Promise<PreparedCommand> {
@@ -15,7 +17,7 @@ export class JavaScriptEngine implements LanguageEngine {
     return {
       command: nodeCmd,
       args: nodeArgs,
-      env: { ...process.env, ...task.options.env },
+      env: buildSandboxEnv(task.options.env),
       cwd: task.tempPath,
     };
   }

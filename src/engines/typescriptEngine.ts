@@ -3,6 +3,8 @@ import { StoneboxCompilationError } from '../errors';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { spawn } from 'child_process';
+import { buildSandboxEnv } from '../utils/envUtils';
+import process from 'process';
 
 export class TypeScriptEngine implements LanguageEngine {
   async prepare(task: ExecutionTask): Promise<PreparedCommand | StoneboxCompilationError> {
@@ -37,32 +39,19 @@ export class TypeScriptEngine implements LanguageEngine {
     await fs.mkdir(path.join(task.tempPath, outDir), { recursive: true });
     // 2. Compile with tsc
     let tscBin: string | undefined;
-    // Prefer explicit tscPath, then try require.resolve, then fallback
+    // Prefer explicit tscPath, then fallback to 'tsc' in PATH
     if (task.options.languageOptions?.tscPath) {
       tscBin = task.options.languageOptions.tscPath;
     } else {
-      try {
-        // Try to resolve typescript from both __dirname and process.cwd()
-        const tsPackagePath = require.resolve('typescript/package.json', {
-          paths: [__dirname, process.cwd()],
-        });
-        tscBin = path.join(path.dirname(tsPackagePath), require(tsPackagePath).bin.tsc);
-      } catch (e) {
-        tscBin = 'tsc';
-      }
+      tscBin = 'tsc';
     }
-    // const tscArgs = tscBin === 'npx' ? ['tsc', '-p', tsconfigPath] : ['-p', tsconfigPath];
     const tscArgs = tscBin === 'npx' ? ['tsc', '-p', tsconfigPath] : ['-p', tsconfigPath];
-    // Debugging output removed
-    // try {
-    //   const files = await fs.readdir(task.tempPath);
-    //   console.error('[Stonebox][TypeScriptEngine] Files in tempPath:', files);
-    // } catch (e) {
-    //   console.error('[Stonebox][TypeScriptEngine] Failed to list files in tempPath:', e);
-    // }
     const compileResult = await new Promise<{ code: number; stdout: string; stderr: string }>(
       (resolve) => {
-        const child = spawn(tscBin!, tscArgs, { cwd: task.tempPath });
+        const child = spawn(tscBin!, tscArgs, {
+          cwd: task.tempPath,
+          env: buildSandboxEnv(task.options.env),
+        });
         let stdout = '';
         let stderr = '';
         child.stdout.on('data', (d) => (stdout += d.toString()));
@@ -72,7 +61,6 @@ export class TypeScriptEngine implements LanguageEngine {
       },
     );
     if (compileResult.code !== 0) {
-      // console.error('[Stonebox][TypeScriptEngine] tsc stderr:', compileResult.stderr);
       return new StoneboxCompilationError('TypeScript compilation failed.', {
         stdout: compileResult.stdout,
         stderr: compileResult.stderr,
@@ -93,7 +81,7 @@ export class TypeScriptEngine implements LanguageEngine {
     return {
       command: nodeCmd,
       args: nodeArgs,
-      env: { ...process.env, ...task.options.env },
+      env: buildSandboxEnv(task.options.env),
       cwd: task.tempPath,
     };
   }
