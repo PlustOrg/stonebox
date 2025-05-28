@@ -22,3 +22,7 @@ yarn-error.log*
 
 # Misc
 *.tsbuildinfo
+
+
+# Github files
+.github/*
