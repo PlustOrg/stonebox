@@ -9,8 +9,8 @@ export interface ExecutionTask {
 }
 
 export interface PreparedCommand {
-  command: string;
-  args: string[];
+  command?: string; // Make command optional
+  args: string[]; // Ensure args is always an array
   env: Record<string, string | undefined>;
   cwd: string;
 }

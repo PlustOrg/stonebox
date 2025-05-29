@@ -120,6 +120,29 @@ const box = new Stonebox('javascript', {
 - Requires Node.js for JS/TS, and Python installed for Python execution
 - Memory/process limits for Python are best-effort and Unix-only
 
-## License
+## Docker Engine Support
 
-MIT
+Stonebox can optionally run code inside Docker containers for stronger isolation. To use Docker, set `engineType: 'docker'` and provide `dockerEngineOptions` with an image name:
+
+```typescript
+const sb = new Stonebox('javascript', {
+  engineType: 'docker',
+  dockerEngineOptions: { image: 'node:18-alpine' }
+});
+sb.addFile('main.js', 'console.log("Hello from Docker!")');
+const result = await sb.execute();
+console.log(result.stdout); // "Hello from Docker!"
+```
+
+- **Supported languages:** `javascript`, `python`, `typescript` (TypeScript is compiled on the host, then JS runs in Docker)
+- **dockerEngineOptions:**
+  - `image` (required): Docker image to use (e.g., `python:3.9-slim`, `node:18-alpine`)
+  - `pullPolicy`: `'Always' | 'IfNotPresent' | 'Never'` (default: `'IfNotPresent'`)
+  - `dockerodeOptions`: Optional connection options for Dockerode
+- **UID/GID:** Set `languageOptions.executionOverrides.uid`/`gid` to run as a specific user inside the container (maps to Docker's `--user`)
+- **TypeScript:** Compiled on the host, then the resulting JS is run in Docker
+- **Timeouts, memory limits, stdin, args, env:** All supported in Docker mode
+
+**Prerequisite:** Docker must be installed and the daemon running.
+
+---

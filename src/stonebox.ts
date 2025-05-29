@@ -1,24 +1,32 @@
-import { StoneboxOptions, StoneboxExecuteOptions, StoneboxExecutionResult } from './interfaces';
-import {
-  StoneboxConfigurationError,
-  StoneboxCompilationError,
-  StoneboxTimeoutError,
-  StoneboxRuntimeError,
-} from './errors';
-import * as fs from 'fs/promises';
-import * as path from 'path';
 import * as os from 'os';
-import { spawn, spawnSync } from 'child_process';
+import * as path from 'path';
+import * as fs from 'fs/promises';
+import { spawn, SpawnOptions } from 'child_process';
 import { rimraf } from 'rimraf';
+import { StoneboxOptions, StoneboxExecuteOptions, StoneboxExecutionResult, EngineType, StoneboxLanguageOptions } from './interfaces';
+import {
+    StoneboxError,
+    StoneboxConfigurationError,
+    StoneboxTimeoutError,
+    StoneboxCompilationError,
+    StoneboxRuntimeError
+} from './errors';
 import { JavaScriptEngine } from './engines/javascriptEngine';
 import { PythonEngine } from './engines/pythonEngine';
 import { TypeScriptEngine } from './engines/typescriptEngine';
+import { JavaScriptDockerEngine } from './engines/javascriptDockerEngine';
+import { PythonDockerEngine } from './engines/pythonDockerEngine';
+import { TypeScriptDockerEngine } from './engines/typescriptDockerEngine';
+import { DockerEngineHelper } from './engines/dockerEngineHelper';
+import { LanguageEngine, ExecutionTask, PreparedCommand } from './engines/types';
+
+// Global diagnostic flag (can be removed if not needed for external debugging)
+// (global as any).__STONEBOX_DIAGNOSTIC_PRESERVE_TEMP_DIR = false; 
 
 export class Stonebox {
   private language: string;
   private options: StoneboxOptions;
   private files: Map<string, string> = new Map();
-  private static checkedLanguages = new Set<string>();
 
   constructor(language: string, options: StoneboxOptions = {}) {
     this.language = language.toLowerCase();
@@ -26,7 +34,6 @@ export class Stonebox {
     if (!['javascript', 'typescript', 'python'].includes(this.language)) {
       throw new StoneboxConfigurationError(`Unsupported language: ${language}`);
     }
-    // Validate options.timeoutMs and memoryLimitMb if provided
     if (
       options.timeoutMs !== undefined &&
       (typeof options.timeoutMs !== 'number' || options.timeoutMs <= 0)
@@ -38,6 +45,13 @@ export class Stonebox {
       (typeof options.memoryLimitMb !== 'number' || options.memoryLimitMb <= 0)
     ) {
       throw new StoneboxConfigurationError('memoryLimitMb must be a positive number');
+    }
+    if (this.options.engineType === 'docker') {
+      if (!this.options.dockerEngineOptions || !this.options.dockerEngineOptions.image) {
+        throw new StoneboxConfigurationError(
+          "When engineType is 'docker', dockerEngineOptions.image must be provided."
+        );
+      }
     }
   }
 
@@ -64,135 +78,148 @@ export class Stonebox {
   public async execute(
     executeOptionsInput?: StoneboxExecuteOptions,
   ): Promise<StoneboxExecutionResult> {
-    // Merge options
     const mergedOptions: StoneboxExecuteOptions & StoneboxOptions = {
       ...this.options,
       ...executeOptionsInput,
+      languageOptions: {
+        ...(this.options.languageOptions || {}),
+        ...(executeOptionsInput?.languageOptions || {}),
+      }
     };
-    // Validate mergedOptions.timeoutMs and memoryLimitMb
+
+    const currentTimeoutMs = mergedOptions.timeoutMs || 10000;
+    let currentEntrypoint = mergedOptions.entrypoint;
+
+    if (!currentEntrypoint && this.files.size === 1) {
+      currentEntrypoint = this.files.keys().next().value;
+    } else if (!currentEntrypoint && this.files.size > 1) {
+      const commonEntrypoints = ['main.js', 'index.js', 'app.js', 'main.py', 'app.py', 'main.ts', 'index.ts'];
+      for (const common of commonEntrypoints) {
+        if (this.files.has(common)) {
+          currentEntrypoint = common;
+          break;
+        }
+      }
+    }
+
+    if (mergedOptions.engineType !== 'docker' || (currentEntrypoint !== undefined && currentEntrypoint !== '')) {
+      if (!currentEntrypoint && currentEntrypoint !== '') {
+        throw new StoneboxConfigurationError('No entrypoint specified and no files added, or multiple files added without a clear entrypoint.');
+      }
+      if (currentEntrypoint && !this.files.has(currentEntrypoint)) {
+        const availableFiles = Array.from(this.files.keys()).join(', ');
+        throw new StoneboxConfigurationError(
+          `Entrypoint '${currentEntrypoint}' not found. Available files: ${availableFiles || 'none'}. Add the entrypoint file or specify a different one.`
+        );
+      }
+    } else if (mergedOptions.engineType === 'docker' && currentEntrypoint === undefined) {
+        currentEntrypoint = '';
+    }
+
     if (
       mergedOptions.timeoutMs !== undefined &&
       (typeof mergedOptions.timeoutMs !== 'number' || mergedOptions.timeoutMs <= 0)
     ) {
-      throw new StoneboxConfigurationError('timeoutMs must be a positive number');
+      throw new StoneboxConfigurationError('timeoutMs must be a positive number.');
     }
     if (
       mergedOptions.memoryLimitMb !== undefined &&
       (typeof mergedOptions.memoryLimitMb !== 'number' || mergedOptions.memoryLimitMb <= 0)
     ) {
-      throw new StoneboxConfigurationError('memoryLimitMb must be a positive number');
-    }
-    const timeoutMs = mergedOptions.timeoutMs ?? 5000;
-    // Entrypoint logic: if not set, use first file (insertion order)
-    let entrypoint = mergedOptions.entrypoint ?? this.options.entrypoint;
-    if (!entrypoint) {
-      if (this.files.size > 1) {
-        // Document fallback to first file
-        // throw new StoneboxConfigurationError('Multiple files added but no entrypoint specified. Please specify an entrypoint.');
-        entrypoint = Array.from(this.files.keys())[0];
-        // Note: fallback to first file added (insertion order)
-      } else {
-        entrypoint = Array.from(this.files.keys())[0];
-      }
-    }
-    if (!entrypoint) {
-      throw new StoneboxConfigurationError('No entrypoint specified and no files added.');
-    }
-    if (!this.files.has(entrypoint)) {
-      // Improve error message: list available files if small, else suggest checking
-      const available = Array.from(this.files.keys());
-      let msg = `Entrypoint file not found: ${entrypoint}.`;
-      if (available.length <= 5) {
-        msg += ` Available files: ${available.join(', ')}`;
-      } else {
-        msg += ' Please check the files you have added.';
-      }
-      throw new StoneboxConfigurationError(msg);
-    }
-    if (this.files.size === 0) {
-      throw new StoneboxConfigurationError('No files added to Stonebox.');
+      throw new StoneboxConfigurationError('memoryLimitMb must be a positive number.');
     }
 
-    // Create temp dir
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'stonebox-'));
+    const resolvedEngineType = mergedOptions.engineType || 'process';
+    
+    const realOsTmpDir = await fs.realpath(os.tmpdir());
+    const tempDirPrefix = path.join(realOsTmpDir, 'stonebox-');
+    const tempDir = await fs.mkdtemp(tempDirPrefix);
+    // console.log(`[Stonebox.execute] Created host tempDir: ${tempDir}`); // Reduced logging
+
+    const hostExecutionTask: ExecutionTask = {
+      files: this.files,
+      entrypoint: currentEntrypoint || '',
+      options: mergedOptions,
+      tempPath: tempDir,
+    };
+
     try {
-      // Write all files
       for (const [filePath, content] of this.files.entries()) {
         const absPath = path.join(tempDir, filePath);
         await fs.mkdir(path.dirname(absPath), { recursive: true });
-        await fs.writeFile(absPath, content, 'utf8');
+        await fs.writeFile(absPath, content, { encoding: 'utf8', mode: 0o755 }); 
+        // console.log(`[Stonebox.execute] Wrote file to host: ${absPath} with mode 755`); // Reduced logging
       }
-      // Select engine
-      const engine = this.getEngineFor(this.language);
-      const preparedCmd = await engine.prepare({
-        files: this.files,
-        entrypoint,
-        options: mergedOptions,
-        tempPath: tempDir,
-      });
-      if (preparedCmd instanceof StoneboxCompilationError) {
-        throw preparedCmd;
+
+      const engine = this.getEngineFor(this.language, resolvedEngineType);
+      const preparedCmdOrError = await engine.prepare(hostExecutionTask);
+
+      if (preparedCmdOrError instanceof StoneboxCompilationError) {
+        throw preparedCmdOrError;
       }
-      // Spawn process
-      return await this.spawnAndCollect(preparedCmd, mergedOptions, timeoutMs);
+      const preparedCmd = preparedCmdOrError as PreparedCommand;
+
+      if (!preparedCmd.args) {
+        preparedCmd.args = [];
+      }
+
+      if (resolvedEngineType === 'docker') {
+        if (!this.options.dockerEngineOptions) {
+            throw new StoneboxConfigurationError("dockerEngineOptions are required for 'docker' engine type.");
+        }
+        const dockerHelper = new DockerEngineHelper(this.options.dockerEngineOptions, hostExecutionTask);
+        return await dockerHelper.runInContainer(preparedCmd, currentTimeoutMs);
+      } else {
+        if (!preparedCmd.command) {
+            throw new StoneboxConfigurationError(
+                `Command not found for process-based execution. Language: ${this.language}`
+            );
+        }
+        return await this.spawnAndCollect(
+            preparedCmd as { command: string; args: string[]; env: Record<string, string|undefined>; cwd: string; }, 
+            mergedOptions, 
+            currentTimeoutMs
+        );
+      }
     } finally {
-      await rimraf(tempDir);
+      // Check diagnostic flag if kept, otherwise always remove
+      const preserveTempDir = (mergedOptions.languageOptions as any)?.__STONEBOX_DIAGNOSTIC_PRESERVE_TEMP_DIR || (global as any).__STONEBOX_DIAGNOSTIC_PRESERVE_TEMP_DIR;
+      if (!preserveTempDir) {
+        try {
+          await rimraf(tempDir);
+        } catch (err) {
+          console.warn(`Stonebox: Failed to remove temporary directory ${tempDir}:`, err);
+        }
+      } else {
+        console.warn(`[Stonebox.execute] DIAGNOSTIC MODE: Host tempDir PRESERVED: ${tempDir}`);
+      }
     }
   }
 
-  private getEngineFor(language: string): any {
-    // Step 3.3: Pre-flight runtime check on first use
-    if (!Stonebox.checkedLanguages.has(language)) {
-      let checkCmd: string | undefined;
-      let checkArgs: string[] = [];
-      let failMsg: string | undefined;
+  private getEngineFor(language: string, engineType?: EngineType): LanguageEngine {
+    engineType = engineType || this.options.engineType || 'process';
+    if (engineType === 'docker') {
       switch (language) {
-        case 'python': {
-          // Prefer explicit pythonPath if set
-          const pythonPath = this.options.languageOptions?.pythonPath as string | undefined;
-          checkCmd = pythonPath || 'python3';
-          checkArgs = ['--version'];
-          failMsg = `Python runtime not found or not working (tried: ${checkCmd} --version)`;
-          break;
-        }
-        case 'javascript': {
-          // Node.js: check process.execPath
-          checkCmd = (this.options.languageOptions?.nodePath as string) || process.execPath;
-          checkArgs = ['--version'];
-          failMsg = `Node.js runtime not found or not working (tried: ${checkCmd} --version)`;
-          break;
-        }
-        case 'typescript': {
-          // Check tsc
-          const tscPath = this.options.languageOptions?.tscPath as string | undefined;
-          checkCmd = tscPath || 'tsc';
-          checkArgs = ['--version'];
-          failMsg = `TypeScript compiler (tsc) not found or not working (tried: ${checkCmd} --version)`;
-          break;
-        }
+        case 'javascript':
+          return new JavaScriptDockerEngine();
+        case 'python':
+          return new PythonDockerEngine();
+        case 'typescript':
+          return new TypeScriptDockerEngine();
         default:
-          throw new StoneboxConfigurationError('Engine selection not implemented.');
+          throw new StoneboxConfigurationError(`Docker engine not supported for language: ${language}`);
       }
-      try {
-        const result = spawnSync(checkCmd, checkArgs, { encoding: 'utf8' });
-        if (result.error || result.status !== 0) {
-          throw new Error(result.error ? result.error.message : result.stderr || 'Unknown error');
-        }
-      } catch (e: any) {
-        throw new StoneboxConfigurationError(failMsg + (e?.message ? `: ${e.message}` : ''));
+    } else {
+      switch (language) {
+        case 'javascript':
+          return new JavaScriptEngine();
+        case 'python':
+          return new PythonEngine();
+        case 'typescript':
+          return new TypeScriptEngine();
+        default:
+          throw new StoneboxConfigurationError(`Unsupported language for process engine: ${language}`);
       }
-      Stonebox.checkedLanguages.add(language);
-    }
-    // ...existing code...
-    switch (language) {
-      case 'javascript':
-        return new JavaScriptEngine();
-      case 'python':
-        return new PythonEngine();
-      case 'typescript':
-        return new TypeScriptEngine();
-      default:
-        throw new StoneboxConfigurationError('Engine selection not implemented.');
     }
   }
 
@@ -210,52 +237,56 @@ export class Stonebox {
       const start = Date.now();
       const abortController = new AbortController();
       let killedByTimeout = false;
-      // 3.2: Add uid/gid support for Unix
-      const spawnOpts: any = {
+      
+      const spawnOpts: SpawnOptions = {
         cwd: preparedCmd.cwd,
-        env: preparedCmd.env,
+        env: preparedCmd.env as Record<string, string>, 
         stdio: ['pipe', 'pipe', 'pipe'],
         signal: abortController.signal,
       };
-      const mergedOptions = options;
+
       if (
         (os.platform() === 'linux' || os.platform() === 'darwin') &&
-        mergedOptions.languageOptions?.executionOverrides
+        options.languageOptions?.executionOverrides
       ) {
-        const overrides = mergedOptions.languageOptions.executionOverrides;
-        if (typeof overrides.uid === 'number') spawnOpts.uid = overrides.uid;
-        if (typeof overrides.gid === 'number') spawnOpts.gid = overrides.gid;
+        const overrides = options.languageOptions.executionOverrides;
+        if (typeof overrides.uid === 'number') (spawnOpts as any).uid = overrides.uid;
+        if (typeof overrides.gid === 'number') (spawnOpts as any).gid = overrides.gid;
       }
+
       const child = spawn(preparedCmd.command, preparedCmd.args, spawnOpts);
       let stdout = '';
       let stderr = '';
       let finished = false;
+
       const timeoutHandle = setTimeout(() => {
         killedByTimeout = true;
-        abortController.abort();
-        child.kill('SIGTERM');
+        abortController.abort(); 
         const forceKillTimeout = setTimeout(() => {
           if (!child.killed) {
             child.kill('SIGKILL');
           }
-        }, 500);
-        child.on('exit', () => clearTimeout(forceKillTimeout));
+        }, 500); 
+        child.on('exit', () => clearTimeout(forceKillTimeout)); 
       }, timeoutMs);
-      child.stdout.on('data', (d) => (stdout += d.toString()));
-      child.stderr.on('data', (d) => (stderr += d.toString()));
+
+      child.stdout?.on('data', (d) => (stdout += d.toString()));
+      child.stderr?.on('data', (d) => (stderr += d.toString()));
+
       if (options.stdin) {
-        child.stdin.write(options.stdin);
-        child.stdin.end();
+        child.stdin?.write(options.stdin);
+        child.stdin?.end();                
       } else {
-        child.stdin.end();
+        child.stdin?.end();                
       }
+
       child.on('error', (err: any) => {
         if (finished) return;
         finished = true;
         clearTimeout(timeoutHandle);
         if (err.name === 'AbortError' || abortController.signal.aborted) {
           reject(
-            new StoneboxTimeoutError('Process timed out.', {
+            new StoneboxTimeoutError('Process timed out (aborted).', { 
               configuredTimeoutMs: timeoutMs,
               actualDurationMs: Date.now() - start,
             }),
@@ -270,14 +301,15 @@ export class Stonebox {
           );
         }
       });
+
       child.on('exit', (code, signal) => {
         if (finished) return;
         finished = true;
         clearTimeout(timeoutHandle);
         const durationMs = Date.now() - start;
-        if (killedByTimeout || abortController.signal.aborted) {
+        if (killedByTimeout || (abortController.signal.aborted && signal === null && code === null) ) { 
           reject(
-            new StoneboxTimeoutError('Process timed out.', {
+            new StoneboxTimeoutError('Process timed out or was aborted.', {
               configuredTimeoutMs: timeoutMs,
               actualDurationMs: durationMs,
             }),

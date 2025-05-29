@@ -16,12 +16,16 @@ export class StoneboxConfigurationError extends StoneboxError {
 export class StoneboxTimeoutError extends StoneboxError {
   configuredTimeoutMs?: number;
   actualDurationMs?: number;
-  constructor(message: string, opts?: { configuredTimeoutMs?: number; actualDurationMs?: number }) {
+  stdout?: string;
+  stderr?: string;
+  constructor(message: string, opts?: { configuredTimeoutMs?: number; actualDurationMs?: number; stdout?: string; stderr?: string }) {
     super(message);
     this.name = 'StoneboxTimeoutError';
     if (opts) {
       this.configuredTimeoutMs = opts.configuredTimeoutMs;
       this.actualDurationMs = opts.actualDurationMs;
+      this.stdout = opts.stdout;
+      this.stderr = opts.stderr;
     }
     Object.setPrototypeOf(this, new.target.prototype);
   }
