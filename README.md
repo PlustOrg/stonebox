@@ -1,5 +1,9 @@
 # Stonebox
 
+![npm version](https://img.shields.io/npm/v/@plust/stonebox?style=flat-square)
+![npm downloads](https://img.shields.io/npm/dm/@plust/stonebox?style=flat-square)
+![GitHub license](https://img.shields.io/github/license/plustorg/stonebox?style=flat-square)
+
 Stonebox is a TypeScript package for running Python, TypeScript, and JavaScript code in a sandboxed environment. It supports two execution engines:
 
 - **Process Engine:** Uses Node.js child processes for fast, local sandboxing.
