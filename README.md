@@ -1,6 +1,6 @@
 # Stonebox
 
-Stonebox is a TypeScript NPM package for running Python, TypeScript, and JavaScript code in a sandboxed environment. It supports two execution engines:
+Stonebox is a TypeScript package for running Python, TypeScript, and JavaScript code in a sandboxed environment. It supports two execution engines:
 
 - **Process Engine:** Uses Node.js child processes for fast, local sandboxing.
 - **Docker Engine:** Runs code inside Docker containers for strong isolation and security.

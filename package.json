@@ -1,6 +1,7 @@
 {
   "name": "@plust/stonebox",
   "version": "0.3.1",
+  "description": "Run JavaScript, TypeScript, and Python code securely in Docker or local sandboxes.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
@@ -12,10 +13,29 @@
     "test": "jest",
     "prepublishOnly": "npm run build"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "sandbox",
+    "docker",
+    "security",
+    "typescript",
+    "python",
+    "nodejs",
+    "isolation",
+    "untrusted code",
+    "container",
+    "code execution",
+    "resource limits"
+  ],
+  "author": "Plust <info@plust.click>",
   "license": "ISC",
-  "description": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/plustorg/stonebox.git"
+  },
+  "bugs": {
+    "url": "https://github.com/plustorg/stonebox/issues"
+  },
+  "homepage": "https://github.com/plustorg/stonebox#readme",
   "devDependencies": {
     "@eslint/js": "^9.27.0",
     "@types/jest": "^29.5.14",
