@@ -106,7 +106,7 @@ export class TypeScriptDockerEngine implements LanguageEngine {
     }
 
     // MODIFICATION: Always explicitly use 'node' as the command for the Docker container.
-    // The Docker image (e.g., node:18-bullseye) should have 'node' in its PATH.
+    // The Docker image (e.g., node:latest) should have 'node' in its PATH.
     // Its ENTRYPOINT might be a shell script that eventually calls 'exec "$@"',
     // so if we provide 'node script.js' as Cmd, it will execute correctly.
     return {

@@ -3,7 +3,7 @@
 export type EngineType = 'process' | 'docker';
 
 export interface DockerEngineSpecificOptions {
-  image: string; // Mandatory: e.g., "python:3.9-slim", "node:18-alpine"
+  image: string; // Mandatory: e.g., "python:3.9-slim", "node:latest"
   dockerodeOptions?: Record<string, unknown>; // Options for dockerode connection
   pullPolicy?: 'Always' | 'IfNotPresent' | 'Never'; // Default 'IfNotPresent'
   /**

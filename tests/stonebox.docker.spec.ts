@@ -59,7 +59,7 @@ describe('Stonebox Docker Execution', () => {
 
 
     it('should execute JavaScript in a Node.js Docker container', async () => {
-        const imageName = 'node:18-bullseye';
+        const imageName = 'node:latest';
         const sandbox = new Stonebox('javascript', {
             engineType: 'docker',
             dockerEngineOptions: { image: imageName }
@@ -92,7 +92,7 @@ describe('Stonebox Docker Execution', () => {
     it('should execute TypeScript (host compile, Docker JS run)', async () => {
         const sandbox = new Stonebox('typescript', {
             engineType: 'docker',
-            dockerEngineOptions: { image: 'node:18-bullseye' }
+            dockerEngineOptions: { image: 'node:latest' }
         });
         sandbox.addFile('main.ts', 'console.log("Hello from TS in Docker"); console.error("DEBUG_TS_STDERR");');
         const result = await sandbox.execute();
@@ -105,7 +105,7 @@ describe('Stonebox Docker Execution', () => {
     it('should pass args and env to Docker container', async () => {
         const sandbox = new Stonebox('javascript', {
             engineType: 'docker',
-            dockerEngineOptions: { image: 'node:18-bullseye' }
+            dockerEngineOptions: { image: 'node:latest' }
         });
         sandbox.addFile('main.js', 'console.log(process.argv[2], process.env.TEST_ENV); console.error("Arg:", process.argv[2], "Env:", process.env.TEST_ENV);');
         const result = await sandbox.execute({ args: ['foo'], env: { TEST_ENV: 'bar' } });
@@ -116,7 +116,7 @@ describe('Stonebox Docker Execution', () => {
     });
 
     it('should handle stdin for Docker', async () => {
-        const imageName = 'node:18-bullseye';
+        const imageName = 'node:latest';
         const sandbox = new Stonebox('javascript', {
             engineType: 'docker',
             dockerEngineOptions: { image: imageName },
@@ -204,7 +204,7 @@ describe('Stonebox Docker Execution', () => {
     it('should support UID/GID in Docker', async () => {
         const sandbox = new Stonebox('javascript', {
             engineType: 'docker',
-            dockerEngineOptions: { image: 'node:18-bullseye' },
+            dockerEngineOptions: { image: 'node:latest' },
             languageOptions: { executionOverrides: { uid: 1000, gid: 1000 } }
         });
         sandbox.addFile('main.js', 'const cp = require("child_process"); const out = cp.execSync("id -u; id -g", {encoding: "utf8"}); process.stdout.write(out); process.stderr.write("UID/GID check ran");');
@@ -221,7 +221,7 @@ describe('Stonebox Docker Execution', () => {
         const sandbox = new Stonebox('javascript', {
             engineType: 'docker',
             timeoutMs: 300, 
-            dockerEngineOptions: { image: 'node:18-bullseye' }
+            dockerEngineOptions: { image: 'node:latest' }
         });
         // This script will produce stderr before timeout.
         sandbox.addFile('main.js', 'console.error("Script starting for timeout test..."); setTimeout(() => { console.log("late output"); }, 2000);'); 

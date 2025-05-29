@@ -35,7 +35,7 @@ import { Stonebox } from 'stonebox';
 const sb = new Stonebox('javascript', {
   engineType: 'docker',
   dockerEngineOptions: {
-    image: 'node:18-alpine',
+    image: 'node:latest',
     networkMode: 'none', // disables all network access
     workspaceMountMode: 'ro', // mount code as read-only
     noNewPrivileges: true, // prevent privilege escalation
@@ -51,7 +51,7 @@ console.log(result.stdout); // "Hello from Docker!"
 // --- TypeScript in Docker ---
 const ts = new Stonebox('typescript', {
   engineType: 'docker',
-  dockerEngineOptions: { image: 'node:18-alpine' }
+  dockerEngineOptions: { image: 'node:latest' }
 });
 ts.addFile('main.ts', 'console.log("Hello from TS in Docker")');
 const tsResult = await ts.execute();
@@ -114,7 +114,7 @@ See TypeScript typings for all options and result types. Key methods:
 
 | Option                | Type/Values                | Description                                                                 | Default (if omitted)         |
 |-----------------------|----------------------------|-----------------------------------------------------------------------------|------------------------------|
-| `image`               | string                     | Docker image to use (e.g. `python:3.9-slim`, `node:18-alpine`)              | **Required**                 |
+| `image`               | string                     | Docker image to use (e.g. `python:3.9-slim`, `node:latest`)              | **Required**                 |
 | `pullPolicy`          | 'Always' \| 'IfNotPresent' \| 'Never' | When/how to pull the image.                                                 | 'IfNotPresent'               |
 | `dockerodeOptions`    | object                     | Options for Dockerode connection.                                           | `{}`                         |
 | `networkMode`         | string                     | Docker network mode (`'none'`, `'bridge'`, custom).                         | Docker default ('bridge')    |
@@ -144,7 +144,7 @@ See TypeScript typings for all options and result types. Key methods:
 const box = new Stonebox('javascript', {
   engineType: 'docker',
   dockerEngineOptions: {
-    image: 'node:18-alpine'
+    image: 'node:latest'
   },
   languageOptions: {
     executionOverrides: { uid: 1001, gid: 1001 }
