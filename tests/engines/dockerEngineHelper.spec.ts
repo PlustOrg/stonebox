@@ -73,4 +73,68 @@ describe('DockerEngineHelper', () => {
     const helper = new DockerEngineHelper({ image: 'node:18-alpine' }, dummyTask);
     await expect(helper.runInContainer(dummyCmd, 1000)).rejects.toThrow('Failed to create Docker container');
   });
+
+  it('should apply networkMode to HostConfig', async () => {
+    mockListImages.mockResolvedValue([{}]);
+    const helper = new DockerEngineHelper({ image: 'node:18-alpine', networkMode: 'none' }, dummyTask);
+    mockCreateContainer.mockImplementation((opts) => {
+      expect(opts.HostConfig.NetworkMode).toBe('none');
+      return { attach: jest.fn(), start: jest.fn(), wait: jest.fn().mockResolvedValue([{ StatusCode: 0 }]), id: 'cid', remove: jest.fn() };
+    });
+    await expect(helper.runInContainer(dummyCmd, 1000)).resolves.toBeDefined();
+  });
+
+  it('should apply workspaceMountMode as ro', async () => {
+    mockListImages.mockResolvedValue([{}]);
+    const helper = new DockerEngineHelper({ image: 'node:18-alpine', workspaceMountMode: 'ro' }, dummyTask);
+    mockCreateContainer.mockImplementation((opts) => {
+      expect(opts.HostConfig.Binds[0]).toMatch(/:ro$/);
+      return { attach: jest.fn(), start: jest.fn(), wait: jest.fn().mockResolvedValue([{ StatusCode: 0 }]), id: 'cid', remove: jest.fn() };
+    });
+    await expect(helper.runInContainer(dummyCmd, 1000)).resolves.toBeDefined();
+  });
+
+  it('should apply cpu and pids limits', async () => {
+    mockListImages.mockResolvedValue([{}]);
+    const helper = new DockerEngineHelper({ image: 'node:18-alpine', cpuShares: 512, cpuPeriod: 100000, cpuQuota: 50000, pidsLimit: 10 }, dummyTask);
+    mockCreateContainer.mockImplementation((opts) => {
+      expect(opts.HostConfig.CpuShares).toBe(512);
+      expect(opts.HostConfig.CpuPeriod).toBe(100000);
+      expect(opts.HostConfig.CpuQuota).toBe(50000);
+      expect(opts.HostConfig.PidsLimit).toBe(10);
+      return { attach: jest.fn(), start: jest.fn(), wait: jest.fn().mockResolvedValue([{ StatusCode: 0 }]), id: 'cid', remove: jest.fn() };
+    });
+    await expect(helper.runInContainer(dummyCmd, 1000)).resolves.toBeDefined();
+  });
+
+  it('should apply capDrop and capAdd', async () => {
+    mockListImages.mockResolvedValue([{}]);
+    const helper = new DockerEngineHelper({ image: 'node:18-alpine', capDrop: ['ALL'], capAdd: ['SYS_PTRACE'] }, dummyTask);
+    mockCreateContainer.mockImplementation((opts) => {
+      expect(opts.HostConfig.CapDrop).toEqual(['ALL']);
+      expect(opts.HostConfig.CapAdd).toEqual(['SYS_PTRACE']);
+      return { attach: jest.fn(), start: jest.fn(), wait: jest.fn().mockResolvedValue([{ StatusCode: 0 }]), id: 'cid', remove: jest.fn() };
+    });
+    await expect(helper.runInContainer(dummyCmd, 1000)).resolves.toBeDefined();
+  });
+
+  it('should apply noNewPrivileges', async () => {
+    mockListImages.mockResolvedValue([{}]);
+    const helper = new DockerEngineHelper({ image: 'node:18-alpine', noNewPrivileges: true }, dummyTask);
+    mockCreateContainer.mockImplementation((opts) => {
+      expect(opts.HostConfig.SecurityOpt).toContain('no-new-privileges');
+      return { attach: jest.fn(), start: jest.fn(), wait: jest.fn().mockResolvedValue([{ StatusCode: 0 }]), id: 'cid', remove: jest.fn() };
+    });
+    await expect(helper.runInContainer(dummyCmd, 1000)).resolves.toBeDefined();
+  });
+
+  it('should apply readonlyRootfs', async () => {
+    mockListImages.mockResolvedValue([{}]);
+    const helper = new DockerEngineHelper({ image: 'node:18-alpine', readonlyRootfs: true }, dummyTask);
+    mockCreateContainer.mockImplementation((opts) => {
+      expect(opts.HostConfig.ReadonlyRootfs).toBe(true);
+      return { attach: jest.fn(), start: jest.fn(), wait: jest.fn().mockResolvedValue([{ StatusCode: 0 }]), id: 'cid', remove: jest.fn() };
+    });
+    await expect(helper.runInContainer(dummyCmd, 1000)).resolves.toBeDefined();
+  });
 });

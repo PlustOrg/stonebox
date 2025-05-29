@@ -139,6 +139,48 @@ export class DockerEngineHelper {
         const languageOpts = this.task.options.languageOptions as StoneboxLanguageOptions & { __STONEBOX_DIAGNOSTIC_PRESERVE_CONTAINER?: boolean };
         const preserveContainerForDebug = !!languageOpts?.__STONEBOX_DIAGNOSTIC_PRESERVE_CONTAINER;
 
+        // --- Security/Isolation Option Defaults ---
+        const mountMode = this.dockerRunOpts.workspaceMountMode || 'rw';
+        if (this.dockerRunOpts.workspaceMountMode) {
+            console.log(`${LOG_PREFIX} workspaceMountMode set to '${mountMode}'.`);
+        } else {
+            console.log(`${LOG_PREFIX} workspaceMountMode not set, using default 'rw'.`);
+        }
+        const bindMount = `${hostTempPath}:/stonebox_workspace:${mountMode}`;
+
+        // Network mode
+        if (this.dockerRunOpts.networkMode) {
+            console.log(`${LOG_PREFIX} networkMode set to '${this.dockerRunOpts.networkMode}'.`);
+        } else {
+            console.log(`${LOG_PREFIX} networkMode not set, using Docker default.`);
+        }
+
+        // CPU/pids/capabilities
+        if (this.dockerRunOpts.cpuShares !== undefined) {
+            console.log(`${LOG_PREFIX} cpuShares set to ${this.dockerRunOpts.cpuShares}`);
+        }
+        if (this.dockerRunOpts.cpuPeriod !== undefined) {
+            console.log(`${LOG_PREFIX} cpuPeriod set to ${this.dockerRunOpts.cpuPeriod}`);
+        }
+        if (this.dockerRunOpts.cpuQuota !== undefined) {
+            console.log(`${LOG_PREFIX} cpuQuota set to ${this.dockerRunOpts.cpuQuota}`);
+        }
+        if (this.dockerRunOpts.pidsLimit !== undefined) {
+            console.log(`${LOG_PREFIX} pidsLimit set to ${this.dockerRunOpts.pidsLimit}`);
+        }
+        if (this.dockerRunOpts.capDrop !== undefined) {
+            console.log(`${LOG_PREFIX} capDrop set to ${JSON.stringify(this.dockerRunOpts.capDrop)}`);
+        }
+        if (this.dockerRunOpts.capAdd !== undefined) {
+            console.log(`${LOG_PREFIX} capAdd set to ${JSON.stringify(this.dockerRunOpts.capAdd)}`);
+        }
+        if (this.dockerRunOpts.noNewPrivileges !== undefined) {
+            console.log(`${LOG_PREFIX} noNewPrivileges set to ${this.dockerRunOpts.noNewPrivileges}`);
+        }
+        if (this.dockerRunOpts.readonlyRootfs !== undefined) {
+            console.log(`${LOG_PREFIX} readonlyRootfs set to ${this.dockerRunOpts.readonlyRootfs}`);
+        }
+
         const createOptions: Docker.ContainerCreateOptions = {
             Image: this.dockerRunOpts.image,
             Cmd: preparedCmd.command ? [preparedCmd.command, ...preparedCmd.args] : preparedCmd.args,
@@ -150,11 +192,54 @@ export class DockerEngineHelper {
             OpenStdin: !!this.task.options.stdin,
             Tty: false, 
             HostConfig: {
-                Binds: [`${hostTempPath}:/stonebox_workspace:rw`], // Using fixed container path
+                Binds: [bindMount],
                 AutoRemove: false, 
             },
         };
 
+        // --- Apply Security/Isolation Options ---
+        // Network
+        if (this.dockerRunOpts.networkMode) {
+            createOptions.HostConfig!.NetworkMode = this.dockerRunOpts.networkMode;
+        }
+        // CPU
+        if (this.dockerRunOpts.cpuShares !== undefined) {
+            createOptions.HostConfig!.CpuShares = this.dockerRunOpts.cpuShares;
+        }
+        if (this.dockerRunOpts.cpuPeriod !== undefined) {
+            createOptions.HostConfig!.CpuPeriod = this.dockerRunOpts.cpuPeriod;
+        }
+        if (this.dockerRunOpts.cpuQuota !== undefined) {
+            createOptions.HostConfig!.CpuQuota = this.dockerRunOpts.cpuQuota;
+        }
+        // PIDs
+        if (this.dockerRunOpts.pidsLimit !== undefined) {
+            createOptions.HostConfig!.PidsLimit = this.dockerRunOpts.pidsLimit;
+        }
+        // Capabilities
+        if (this.dockerRunOpts.capDrop !== undefined) {
+            if (this.dockerRunOpts.capDrop === 'ALL') {
+                createOptions.HostConfig!.CapDrop = ['ALL'];
+            } else if (Array.isArray(this.dockerRunOpts.capDrop)) {
+                createOptions.HostConfig!.CapDrop = this.dockerRunOpts.capDrop;
+            }
+        }
+        if (this.dockerRunOpts.capAdd !== undefined) {
+            createOptions.HostConfig!.CapAdd = this.dockerRunOpts.capAdd;
+        }
+        // no-new-privileges
+        if (this.dockerRunOpts.noNewPrivileges === true) {
+            if (!createOptions.HostConfig!.SecurityOpt) createOptions.HostConfig!.SecurityOpt = [];
+            createOptions.HostConfig!.SecurityOpt.push('no-new-privileges');
+        } else if (this.dockerRunOpts.noNewPrivileges === false && createOptions.HostConfig!.SecurityOpt) {
+            // Remove if present
+            createOptions.HostConfig!.SecurityOpt = createOptions.HostConfig!.SecurityOpt.filter((opt: string) => opt !== 'no-new-privileges');
+        }
+        // Readonly rootfs
+        if (this.dockerRunOpts.readonlyRootfs !== undefined) {
+            createOptions.HostConfig!.ReadonlyRootfs = !!this.dockerRunOpts.readonlyRootfs;
+        }
+        // ...existing code for memory limit, user, entrypoint override, etc...
         if (this.task.options.memoryLimitMb) {
             createOptions.HostConfig!.Memory = this.task.options.memoryLimitMb * 1024 * 1024;
         }
@@ -171,7 +256,6 @@ export class DockerEngineHelper {
         ) {
              createOptions.Entrypoint = ['python3'];
              createOptions.Cmd = preparedCmd.args;
-             // console.error(`${LOG_PREFIX} Applied Python Entrypoint override...`); // Reduced logging
         }
         
         // console.error(`${LOG_PREFIX} Creating container. Image: ${createOptions.Image}, Cmd: ${JSON.stringify(createOptions.Cmd)}...`); // Reduced

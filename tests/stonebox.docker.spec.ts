@@ -242,4 +242,24 @@ describe('Stonebox Docker Execution', () => {
             expect(caughtError.stderr || '').toContain("Script starting for timeout test...");
         }
     });
+
+    it('should block network access with networkMode: none', async () => {
+        const sandbox = new Stonebox('python', {
+            engineType: 'docker',
+            dockerEngineOptions: { image: 'python:3.9-slim', networkMode: 'none' },
+        });
+        sandbox.addFile('main.py', 'import socket\ntry:\n  socket.create_connection((\'1.1.1.1\', 80), timeout=2)\n  print(\'network ok\')\nexcept Exception as e:\n  print(\'network fail\')');
+        const result = await sandbox.execute();
+        expect(result.stdout).toMatch(/network fail/);
+    });
+
+    it('should mount workspace as read-only if workspaceMountMode is ro', async () => {
+        const sandbox = new Stonebox('python', {
+            engineType: 'docker',
+            dockerEngineOptions: { image: 'python:3.9-slim', workspaceMountMode: 'ro' },
+        });
+        sandbox.addFile('main.py', 'try:\n  open(\'testfile.txt\', \'w\').write(\'fail\')\n  print(\'write ok\')\nexcept Exception as e:\n  print(\'write fail\')');
+        const result = await sandbox.execute();
+        expect(result.stdout).toMatch(/write fail/);
+    });
 });
