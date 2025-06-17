@@ -2,44 +2,21 @@
 
 export type EngineType = 'process' | 'docker';
 
+export type Language = 'javascript' | 'typescript' | 'python';
+
 export interface DockerEngineSpecificOptions {
   image: string; // Mandatory: e.g., "python:3.9-slim", "node:latest"
   dockerodeOptions?: Record<string, unknown>; // Options for dockerode connection
   pullPolicy?: 'Always' | 'IfNotPresent' | 'Never'; // Default 'IfNotPresent'
-  /**
-   * Network isolation: Docker network mode. Examples: 'none', 'bridge', custom network name.
-   * If not set, Docker default applies (usually 'bridge').
-   */
   networkMode?: string;
-  /**
-   * Workspace mount mode: 'rw' (read-write, default) or 'ro' (read-only).
-   * If not set, defaults to 'rw'.
-   */
   workspaceMountMode?: 'rw' | 'ro';
-  /**
-   * CPU resource controls. If not set, Docker default applies (no limit).
-   */
   cpuShares?: number;
   cpuPeriod?: number;
   cpuQuota?: number;
-  /**
-   * Limit max number of processes (PIDs) in the container. If not set, Docker default applies.
-   */
   pidsLimit?: number;
-  /**
-   * Kernel capabilities: drop/add. If not set, Docker default applies (no extra drop/add).
-   * capDrop: string[] or 'ALL' to drop all capabilities.
-   * capAdd: string[] to add capabilities.
-   */
   capDrop?: string[] | 'ALL';
   capAdd?: string[];
-  /**
-   * no-new-privileges security option. If true, sets 'no-new-privileges'. Default: false (not set).
-   */
   noNewPrivileges?: boolean;
-  /**
-   * Make root filesystem read-only. If true, sets ReadonlyRootfs. Default: false (writable root).
-   */
   readonlyRootfs?: boolean;
 }
 
@@ -52,36 +29,45 @@ export interface StoneboxLanguageOptions {
     uid?: number;
     gid?: number;
   };
-  __STONEBOX_DIAGNOSTIC_PRESERVE_CONTAINER?: boolean; // Diagnostic flag
-  [key: string]: any; // Allow other properties for flexibility
+  __STONEBOX_DIAGNOSTIC_PRESERVE_CONTAINER?: boolean;
+  [key: string]: any;
 }
 
-export interface StoneboxOptions {
-  timeoutMs?: number; // Max execution time in ms
-  memoryLimitMb?: number; // Max memory in MB (Node.js & Docker, Python on Unix)
-  entrypoint?: string; // Default entrypoint file
-  args?: string[]; // Default args
-  stdin?: string; // Default stdin
+export interface EnvironmentOptions {
+  language: Language; // Required: language for the environment
+  timeoutMs?: number;
+  memoryLimitMb?: number;
   env?: Record<string, string | undefined>; // Default environment variables
-  languageOptions?: StoneboxLanguageOptions; // Language-specific options
-  engineType?: EngineType; // Default to 'process' if not specified
+  languageOptions?: StoneboxLanguageOptions;
+  engineType?: EngineType;
   dockerEngineOptions?: DockerEngineSpecificOptions;
 }
 
-export interface StoneboxExecuteOptions {
+// DEFINITIVE FIX: `stdin` has been removed.
+export interface ExecuteOptions {
   timeoutMs?: number;
   memoryLimitMb?: number;
-  entrypoint?: string;
-  args?: string[];
-  stdin?: string;
   env?: Record<string, string | undefined>;
-  languageOptions?: StoneboxLanguageOptions; // Allow overriding/extending at execute time
 }
 
-export interface StoneboxExecutionResult {
+export interface ExecutionResult {
   stdout: string;
   stderr: string;
   exitCode: number | null;
   signal: string | null;
   durationMs: number;
+}
+
+export interface ExecutionEnvironment {
+  readonly tempPath: string;
+  readonly options: EnvironmentOptions;
+
+  addFile(path: string, content: string): Promise<void>;
+  addFiles(files: Array<{ path: string; content: string }>): Promise<void>;
+  execute(command: string, args?: string[], options?: ExecuteOptions): Promise<ExecutionResult>;
+  delete(): Promise<void>;
+}
+
+export interface Stonebox {
+  createEnvironment(options: EnvironmentOptions): Promise<ExecutionEnvironment>;
 }

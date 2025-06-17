@@ -1,119 +1,90 @@
-import { LanguageEngine, ExecutionTask, PreparedCommand } from './types';
-import { StoneboxCompilationError } from '../errors';
+import { LanguageEngine, PreparedCommand } from './types';
+import { StoneboxCompilationError, StoneboxConfigurationError } from '../errors';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { spawn } from 'child_process';
-import { buildSandboxEnv } from '../utils/envUtils';
-
-// isOfficialNodeImage might not be needed if we always specify 'node' as command
-// function isOfficialNodeImage(image?: string): boolean {
-//   if (!image) return false;
-//   return /^node:(\d+|\d+\.\d+|\d+\.\d+\.\d+|[\w.-]+)$/.test(image);
-// }
+import { ExecutionEnvironment } from '../environment';
+import { ExecuteOptions } from '../interfaces';
 
 export class TypeScriptDockerEngine implements LanguageEngine {
-  async prepare(task: ExecutionTask): Promise<PreparedCommand | StoneboxCompilationError> {
-    // --- Stage 1: Compile TypeScript locally (on the host) ---
-    const tsconfigPath = path.join(task.tempPath, 'tsconfig.json');
-    let outDir = 'compiled_ts_docker'; 
+  async prepare(
+    environment: ExecutionEnvironment,
+    command: string, // e.g., 'node'
+    args: string[], // e.g., ['main.ts', 'arg1']
+    options: ExecuteOptions,
+  ): Promise<PreparedCommand | StoneboxCompilationError> {
+    const languageOptions = environment.options.languageOptions || {};
+
+    const tsEntrypoint = args[0];
+    if (!tsEntrypoint || !tsEntrypoint.endsWith('.ts')) {
+      throw new StoneboxConfigurationError(
+        `The first argument for a TypeScript execution must be a .ts file. Received: ${tsEntrypoint}`,
+      );
+    }
+
+    // --- Stage 1: Compile TypeScript on the host (same as local engine) ---
+    const outDir = 'compiled_ts_docker';
+    await this.compile(environment, outDir);
+
+    // --- Stage 2: Prepare command to run the *compiled JS inside Docker* ---
+    const jsEntrypointFileName = tsEntrypoint.replace(/\.ts$/, '.js');
+    // The path must be relative to the workspace root inside the container
+    const jsEntrypointInContainer = path.join(outDir, jsEntrypointFileName).replace(/\\/g, '/');
+    const userArgs = args.slice(1);
+
+    const nodeCmd = command || languageOptions.nodePath || 'node';
+
+    return {
+      command: nodeCmd,
+      args: [jsEntrypointInContainer, ...userArgs],
+      env: options.env || environment.options.env || {},
+      cwd: '/stonebox_workspace',
+    };
+  }
+
+  // The compile method is identical to the one in the local TypeScriptEngine
+  private async compile(environment: ExecutionEnvironment, outDir: string): Promise<void> {
+    const tempPath = environment.tempPath;
+    const languageOptions = environment.options.languageOptions || {};
+    const tsconfigPath = path.join(tempPath, 'tsconfig.json');
 
     try {
       await fs.access(tsconfigPath);
-      try {
-        const tsconfigContent = JSON.parse(await fs.readFile(tsconfigPath, 'utf8'));
-        if (tsconfigContent?.compilerOptions?.outDir) {
-          outDir = tsconfigContent.compilerOptions.outDir;
-        }
-      } catch (e) {
-        console.warn(`Stonebox TypeScriptDockerEngine: Could not parse existing tsconfig.json at ${tsconfigPath}, using default outDir '${outDir}'. Error: ${e}`);
-      }
     } catch {
       await fs.writeFile(
         tsconfigPath,
         JSON.stringify({
           compilerOptions: { target: 'es2020', module: 'commonjs', outDir, rootDir: '.' },
           include: ['**/*.ts'],
-        }, null, 2),
+        }),
         'utf8',
       );
     }
-    
-    const absoluteOutDir = path.join(task.tempPath, outDir);
-    await fs.mkdir(absoluteOutDir, { recursive: true });
+    await fs.mkdir(path.join(tempPath, outDir), { recursive: true });
 
-    let tscBin = task.options.languageOptions?.tscPath as string | undefined;
-    if (!tscBin) {
-      try {
-        const tsPackagePath = require.resolve('typescript/package.json', { paths: [process.cwd(), __dirname] });
-        tscBin = path.join(path.dirname(tsPackagePath), require(tsPackagePath).bin.tsc);
-      } catch (e) { 
-        console.warn(`Stonebox TypeScriptDockerEngine: Could not resolve 'typescript' package. Falling back to 'tsc' in PATH. Error: ${e}`);
-        tscBin = 'tsc';
-      }
+    let tscBin = languageOptions.tscPath || 'tsc';
+    const tscArgs = tscBin.toLowerCase().endsWith('npx') ? ['tsc', '-p', tsconfigPath] : ['-p', tsconfigPath];
+    if(tscBin.toLowerCase().endsWith('npx')) {
+      tscBin = 'npx';
     }
 
-    let tscSpawnCmd = tscBin;
-    let tscSpawnArgs: string[];
-
-    if (tscBin.endsWith('npx')) {
-        tscSpawnCmd = 'npx';
-        tscSpawnArgs = ['tsc', '-p', tsconfigPath];
-    } else { // For 'tsc' or absolute path to tsc
-        tscSpawnArgs = ['-p', tsconfigPath];
-    }
-
-    console.log(`[TypeScriptDockerEngine] Compiling TS. Command: '${tscSpawnCmd}', Args: '${JSON.stringify(tscSpawnArgs)}', CWD: '${task.tempPath}'`);
     const compileResult = await new Promise<{ code: number | null; stdout: string; stderr: string }>(
       (resolve) => {
-        const child = spawn(tscSpawnCmd, tscSpawnArgs, { cwd: task.tempPath, env: buildSandboxEnv(task.options.env) });
-        let stdout = ''; 
+        const child = spawn(tscBin, tscArgs, { cwd: tempPath, env: process.env });
+        let stdout = '';
         let stderr = '';
-        child.stdout?.on('data', (d) => (stdout += d.toString()));
-        child.stderr?.on('data', (d) => (stderr += d.toString()));
-        child.on('close', (code) => {
-            console.log(`[TypeScriptDockerEngine] tsc process exited with code: ${code}. Stdout: ${stdout.substring(0,100)}..., Stderr: ${stderr.substring(0,100)}...`);
-            resolve({ code, stdout, stderr });
-        });
-        child.on('error', (err) => {
-            console.error(`[TypeScriptDockerEngine] Failed to spawn tsc: ${err.message}`);
-            resolve({ code: 1, stdout, stderr: `Failed to spawn tsc: ${err.message}` });
-        });
-      }
+        child.stdout.on('data', (d) => (stdout += d.toString()));
+        child.stderr.on('data', (d) => (stderr += d.toString()));
+        child.on('close', (code) => resolve({ code, stdout, stderr }));
+        child.on('error', (err) => resolve({ code: 1, stdout, stderr: `Failed to spawn tsc: ${err.message}` }));
+      },
     );
 
     if (compileResult.code !== 0) {
-      return new StoneboxCompilationError('TypeScript compilation failed (host stage for Docker).', {
+      throw new StoneboxCompilationError('TypeScript compilation failed (host stage for Docker).', {
         stdout: compileResult.stdout,
         stderr: compileResult.stderr,
       });
     }
-
-    const jsEntrypointFileName = task.entrypoint.replace(/\.ts$/, '.js');
-    const jsEntrypointOnHost = path.join(absoluteOutDir, jsEntrypointFileName);
-    
-    try {
-        await fs.chmod(jsEntrypointOnHost, 0o755);
-        console.log(`[TypeScriptDockerEngine] Set execute permission on compiled JS: ${jsEntrypointOnHost}`);
-    } catch (chmodError: any) {
-        console.warn(`[TypeScriptDockerEngine] Failed to set execute permission on ${jsEntrypointOnHost}: ${chmodError.message}.`);
-    }
-
-    const jsEntrypointInContainer = path.join(outDir, jsEntrypointFileName).replace(/\\/g, '/'); 
-    
-    const scriptArgs: string[] = [jsEntrypointInContainer];
-    if (task.options.args) {
-      scriptArgs.push(...task.options.args);
-    }
-
-    // MODIFICATION: Always explicitly use 'node' as the command for the Docker container.
-    // The Docker image (e.g., node:latest) should have 'node' in its PATH.
-    // Its ENTRYPOINT might be a shell script that eventually calls 'exec "$@"',
-    // so if we provide 'node script.js' as Cmd, it will execute correctly.
-    return {
-      command: 'node', // Explicitly use 'node'
-      args: scriptArgs,  // args will be [ "compiled_ts_docker/main.js", ...userArgs ]
-      env: task.options.env || {},
-      cwd: "/stonebox_workspace", 
-    };
   }
 }

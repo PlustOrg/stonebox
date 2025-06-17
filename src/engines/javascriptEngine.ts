@@ -1,24 +1,33 @@
 import process from 'process';
-import { LanguageEngine, ExecutionTask, PreparedCommand } from './types';
+import { LanguageEngine, PreparedCommand } from './types';
 import { buildSandboxEnv } from '../utils/envUtils';
+import { ExecutionEnvironment } from '../environment';
+import { ExecuteOptions } from '../interfaces';
 
 export class JavaScriptEngine implements LanguageEngine {
-  async prepare(task: ExecutionTask): Promise<PreparedCommand> {
-    const nodeArgs: string[] = [];
-    if (task.options.memoryLimitMb) {
-      nodeArgs.push(`--max-old-space-size=${task.options.memoryLimitMb}`);
+  async prepare(
+    environment: ExecutionEnvironment,
+    command: string,
+    args: string[],
+    options: ExecuteOptions,
+  ): Promise<PreparedCommand> {
+    const languageOptions = environment.options.languageOptions || {};
+    const memoryLimitMb = options.memoryLimitMb || environment.options.memoryLimitMb;
+
+    // Use the command passed to execute(), fallback to config, then system default
+    const nodeCmd = command || languageOptions.nodePath || process.execPath;
+
+    const finalArgs: string[] = [];
+    if (memoryLimitMb) {
+      finalArgs.push(`--max-old-space-size=${memoryLimitMb}`);
     }
-    nodeArgs.push(task.entrypoint);
-    if (task.options.args) {
-      nodeArgs.push(...task.options.args);
-    }
-    // Prefer explicit nodePath, then process.execPath
-    const nodeCmd = (task.options.languageOptions?.nodePath as string) || process.execPath;
+    finalArgs.push(...args);
+
     return {
       command: nodeCmd,
-      args: nodeArgs,
-      env: buildSandboxEnv(task.options.env),
-      cwd: task.tempPath,
+      args: finalArgs,
+      env: buildSandboxEnv(options.env || environment.options.env),
+      cwd: environment.tempPath,
     };
   }
 }

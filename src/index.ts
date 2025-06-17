@@ -1,4 +1,5 @@
 // Main export point
-export * from './stonebox';
+export { Stonebox } from './stonebox';
+export { ExecutionEnvironment } from './environment';
 export * from './interfaces';
 export * from './errors';

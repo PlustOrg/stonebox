@@ -1,20 +1,19 @@
-import { StoneboxExecuteOptions, StoneboxOptions } from '../interfaces';
 import { StoneboxCompilationError } from '../errors';
-
-export interface ExecutionTask {
-  files: Map<string, string>;
-  entrypoint: string;
-  options: StoneboxExecuteOptions & Partial<StoneboxOptions>;
-  tempPath: string;
-}
+import { ExecutionEnvironment } from '../environment';
+import { ExecuteOptions } from '../interfaces';
 
 export interface PreparedCommand {
-  command?: string; // Make command optional
-  args: string[]; // Ensure args is always an array
+  command?: string; // Optional: Docker may use image's entrypoint
+  args: string[];
   env: Record<string, string | undefined>;
   cwd: string;
 }
 
 export interface LanguageEngine {
-  prepare(task: ExecutionTask): Promise<PreparedCommand | StoneboxCompilationError>;
+  prepare(
+    environment: ExecutionEnvironment,
+    command: string,
+    args: string[],
+    options: ExecuteOptions,
+  ): Promise<PreparedCommand | StoneboxCompilationError>;
 }
